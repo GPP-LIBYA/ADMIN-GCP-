@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import type { SiteVisit } from '../types';
 import { Activity, Calendar, Monitor, Navigation } from 'lucide-react';
+import { formatAdminDateTime } from '../utils/dateUtils';
 
 export default function Visits() {
   const [visits, setVisits] = useState<SiteVisit[]>([]);
@@ -122,7 +123,7 @@ export default function Visits() {
                     <td className="px-4 py-3 font-mono text-xs text-primary-600" dir="ltr">{v.path}</td>
                     <td className="px-4 py-3 font-mono text-xs text-slate-500 dark:text-slate-400" dir="ltr">{v.ip_address || '-'}</td>
                     <td className="px-4 py-3 text-xs text-slate-500 dark:text-slate-400">
-                      {new Date(v.visited_at).toLocaleString('ar-SA')}
+                      {formatAdminDateTime(v.visited_at)}
                     </td>
                   </tr>
                 ))}

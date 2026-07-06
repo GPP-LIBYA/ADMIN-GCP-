@@ -4,6 +4,7 @@ import { useAuthStore } from '../store/authStore';
 import { Download, Search, Filter } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import type { SectorCatalog, CommodityCatalog } from '../types';
+import { formatAdminDateTime } from '../utils/dateUtils';
 
 export default function PriceHistory() {
   const { adminUser } = useAuthStore();
@@ -144,7 +145,7 @@ export default function PriceHistory() {
         source: r.source,
         update_method: r.update_method,
         admin_email: r.admin_email,
-        recorded_at: new Date(r.recorded_at).toLocaleString('en-US', { hour12: false })
+        recorded_at: formatAdminDateTime(r.recorded_at)
       }));
       
       const worksheet = XLSX.utils.json_to_sheet(rows);
@@ -248,7 +249,7 @@ export default function PriceHistory() {
                 {history.map(item => (
                   <tr key={item.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 dark:bg-dark-bg/50">
                     <td className="px-4 py-3 text-slate-500 dark:text-slate-400 text-xs" dir="ltr">
-                      {new Date(item.recorded_at).toLocaleString('en-US', { hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                      {formatAdminDateTime(item.recorded_at)}
                     </td>
                     <td className="px-4 py-3 font-medium font-mono text-slate-900 dark:text-white" dir="ltr">{item.symbol}</td>
                     <td className="px-4 py-3 text-slate-800 dark:text-slate-200">{item.name_ar}</td>

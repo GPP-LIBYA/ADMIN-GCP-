@@ -2,9 +2,11 @@ import { useState, useEffect, FormEvent, useRef, ChangeEvent } from 'react';
 import { supabase } from '../lib/supabase';
 import type { Commodity, CommodityCatalog, UnitsCatalog, SectorCatalog } from '../types';
 import { useAuthStore } from '../store/authStore';
-import { Search, Edit2, Check, X, Filter, Plus, Upload, AlertCircle, FileText, Trash2, Package, CheckSquare, Download, Eye, EyeOff } from 'lucide-react';
+import { Search, Edit2, Check, X, Filter, Plus, Upload, AlertCircle, FileText, Trash2, Package, CheckSquare, Download, Eye, EyeOff, TrendingUp } from 'lucide-react';
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
+import PriceChartModal from '../components/PriceChartModal';
+import { formatAdminDateTime } from '../utils/dateUtils';
 
 export default function Prices() {
   const { adminUser } = useAuthStore();
@@ -46,6 +48,8 @@ export default function Prices() {
   
   // Edit & Add State
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isChartModalOpen, setIsChartModalOpen] = useState(false);
+  const [chartModalItem, setChartModalItem] = useState<{symbol: string; name_ar: string; name_en: string; sector: string} | null>(null);
   const [editingItem, setEditingItem] = useState<Commodity | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [form, setForm] = useState<Partial<Commodity>>({
@@ -134,6 +138,16 @@ export default function Prices() {
     setSearchCommodity('');
     setForm({ ...item });
     setIsModalOpen(true);
+  };
+
+  const openChartModal = (item: Commodity) => {
+    setChartModalItem({
+      symbol: item.symbol,
+      name_ar: item.name_ar,
+      name_en: item.name_en,
+      sector: item.sector
+    });
+    setIsChartModalOpen(true);
   };
 
   const deleteCommodity = async (id: string) => {
@@ -909,7 +923,7 @@ export default function Prices() {
         source: r.source,
         status: r.status,
         is_visible: r.is_visible,
-        updated_at: new Date(r.updated_at).toLocaleString('en-US', { hour12: false })
+        updated_at: formatAdminDateTime(r.updated_at)
       }));
       
       const worksheet = XLSX.utils.json_to_sheet(rows);
@@ -1110,7 +1124,7 @@ export default function Prices() {
                            </span>
                          </td>
                          <td className="px-4 py-3 text-center text-slate-500 dark:text-slate-400 text-xs">
-                           {new Date(item.updated_at).toLocaleString('ar-SA', { hour12: false, hour: '2-digit', minute:'2-digit', day:'2-digit', month:'2-digit' })}
+                           {formatAdminDateTime(item.updated_at)}
                          </td>
                          <td className="px-4 py-3 text-center">
                            <span className={`px-2 py-1 rounded-full text-xs ${
@@ -1129,6 +1143,9 @@ export default function Prices() {
                          </td>
                          <td className="px-4 py-3 text-center">
                            <div className="flex items-center justify-center gap-2 relative">
+                             <button onClick={() => openChartModal(item)} className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-md" title="عرض الرسم">
+                               <TrendingUp size={16} />
+                             </button>
                              <button onClick={() => openEditModal(item)} className="p-1.5 text-primary-600 hover:bg-primary-50 rounded-md">
                                <Edit2 size={16} />
                              </button>
@@ -1615,6 +1632,12 @@ export default function Prices() {
           </div>
         </div>
       )}
+
+      <PriceChartModal 
+        isOpen={isChartModalOpen}
+        onClose={() => setIsChartModalOpen(false)}
+        commodity={chartModalItem}
+      />
 
     </div>
   );

@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import type { Analysis } from '../types';
 import { useAuthStore } from '../store/authStore';
 import { Plus, Edit2, Trash2, X } from 'lucide-react';
+import { formatAdminDateTime } from '../utils/dateUtils';
 
 export default function AnalysisPage() {
   const { adminUser } = useAuthStore();
@@ -193,7 +194,7 @@ export default function AnalysisPage() {
                   <td className="px-4 py-3 font-mono" dir="ltr">{item.asset_symbol || '-'}</td>
                   <td className="px-4 py-3">{item.author || '-'}</td>
                   <td className="px-4 py-3 text-center text-slate-500 dark:text-slate-400 text-xs">
-                    {new Date(item.created_at).toLocaleString('ar-SA')}
+                    {formatAdminDateTime(item.created_at)}
                   </td>
                   <td className="px-4 py-3 text-center">
                      <button

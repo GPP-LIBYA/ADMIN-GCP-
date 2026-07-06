@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import type { Message } from '../types';
 import { useAuthStore } from '../store/authStore';
 import { Trash2, Mail, MailOpen } from 'lucide-react';
+import { formatAdminDateTime } from '../utils/dateUtils';
 
 export default function Messages() {
   const { adminUser } = useAuthStore();
@@ -107,7 +108,7 @@ export default function Messages() {
                         {msg.sender_name}
                       </h3>
                       <span className="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap" dir="ltr">
-                        {new Date(msg.created_at).toLocaleString('ar-SA')}
+                        {formatAdminDateTime(msg.created_at)}
                       </span>
                     </div>
                     <p className="text-sm text-slate-500 dark:text-slate-400 mb-3" dir="ltr">{msg.sender_email}</p>

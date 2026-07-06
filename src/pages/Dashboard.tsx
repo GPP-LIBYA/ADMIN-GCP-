@@ -9,6 +9,7 @@ import {
   Activity,
   Clock
 } from 'lucide-react';
+import { formatAdminDateTime } from '../utils/dateUtils';
 
 interface Stats {
   activeCommodities: number;
@@ -100,7 +101,7 @@ export default function Dashboard() {
         {stats?.lastPriceUpdate && (
           <div className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400 bg-white dark:bg-dark-card px-3 py-1.5 rounded-full border dark:border-dark-border dark:border-dark-border shadow-sm">
             <Clock size={16} />
-            <span>آخر تحديث للأسعار: {new Date(stats.lastPriceUpdate).toLocaleString('ar-SA')}</span>
+            <span>آخر تحديث للأسعار: {formatAdminDateTime(stats.lastPriceUpdate)}</span>
           </div>
         )}
       </div>
