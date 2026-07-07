@@ -18,6 +18,7 @@ import Messages from './pages/Messages';
 import Visits from './pages/Visits';
 import Settings from './pages/Settings';
 import Admins from './pages/Admins';
+import Reports from './pages/Reports';
 
 function ProtectedRoute({ 
   children, 
@@ -120,6 +121,12 @@ export default function App() {
         <Route path="/admins" element={
           <ProtectedRoute requiredPermission="can_manage_admins">
             <Admins />
+          </ProtectedRoute>
+        } />
+        
+        <Route path="/reports" element={
+          <ProtectedRoute>
+            <Reports />
           </ProtectedRoute>
         } />
         
