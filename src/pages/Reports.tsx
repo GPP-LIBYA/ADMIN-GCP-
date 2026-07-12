@@ -69,6 +69,9 @@ const Reports: React.FC = () => {
   const [reportMonth, setReportMonth] = useState((new Date().getMonth() + 1).toString().padStart(2, '0'));
   const [reportYear, setReportYear] = useState(new Date().getFullYear().toString());
   const [monthlyScope, setMonthlyScope] = useState('general');
+  const [selectedCommodities, setSelectedCommodities] = useState<string[]>([]);
+  const [sectorCommodities, setSectorCommodities] = useState<any[]>([]);
+  const [sectorCommoditySearch, setSectorCommoditySearch] = useState('');
   
   // Content Options
   const [includeNews, setIncludeNews] = useState(true);
@@ -91,6 +94,33 @@ const Reports: React.FC = () => {
     fetchCatalogs();
   }, []);
 
+  useEffect(() => {
+    if (sectorFilter && reportType === 'sector') {
+      const fetchSectorCommodities = async () => {
+        try {
+          const { data } = await supabase
+            .from('commodities')
+            .select('symbol, name_ar, name_en, sector, unit, source')
+            .eq('sector', sectorFilter)
+            .eq('is_visible', true)
+            .eq('status', 'active')
+            .order('name_ar', { ascending: true });
+            
+          if (data) {
+            setSectorCommodities(data);
+            setSelectedCommodities([]);
+          }
+        } catch (err) {
+          console.error('Error fetching sector commodities:', err);
+        }
+      };
+      fetchSectorCommodities();
+    } else {
+      setSectorCommodities([]);
+      setSelectedCommodities([]);
+    }
+  }, [sectorFilter, reportType]);
+
   const fetchCatalogs = async () => {
     try {
       const [sectorsRes, catalogRes, settingsRes] = await Promise.all([
@@ -109,12 +139,21 @@ const Reports: React.FC = () => {
   };
 
   const handleGenerate = async () => {
+    if ((reportType === 'sector' || ((reportType === 'monthly' || reportType === 'annual') && monthlyScope === 'sector')) && sectorFilter && selectedCommodities.length === 0) {
+      alert('يرجى اختيار سلعة واحدة على الأقل من القطاع لإنشاء التقرير');
+      return;
+    }
+
     setLoading(true);
     try {
       // Gather base data
       let pricesQuery = supabase.from('commodities').select('*');
-      if (sectorFilter && (reportType === 'sector' || ((reportType === 'monthly' || reportType === 'annual') && monthlyScope === 'sector'))) pricesQuery = pricesQuery.eq('sector', sectorFilter);
-      if (symbolFilter && (reportType === 'commodity' || reportType === 'detailed_commodity' || ((reportType === 'monthly' || reportType === 'annual') && monthlyScope === 'commodity'))) pricesQuery = pricesQuery.eq('symbol', symbolFilter);
+      if (sectorFilter && (reportType === 'sector' || ((reportType === 'monthly' || reportType === 'annual') && monthlyScope === 'sector'))) {
+        pricesQuery = pricesQuery.eq('sector', sectorFilter).in('symbol', selectedCommodities);
+      }
+      if (symbolFilter && (reportType === 'commodity' || reportType === 'detailed_commodity' || ((reportType === 'monthly' || reportType === 'annual') && monthlyScope === 'commodity'))) {
+        pricesQuery = pricesQuery.eq('symbol', symbolFilter);
+      }
       const { data: prices } = await pricesQuery;
 
             // Probe for recorded_at column
@@ -128,7 +167,7 @@ const Reports: React.FC = () => {
       
       const sectorSymbols = prices ? prices.map((p: any) => p.symbol) : [];
       if (sectorFilter && (reportType === 'sector' || ((reportType === 'monthly' || reportType === 'annual') && monthlyScope === 'sector'))) {
-        historyQuery = historyQuery.in('symbol', sectorSymbols);
+        historyQuery = historyQuery.in('symbol', selectedCommodities);
       }
       if (symbolFilter && (reportType === 'commodity' || reportType === 'detailed_commodity' || ((reportType === 'monthly' || reportType === 'annual') && monthlyScope === 'commodity'))) {
         historyQuery = historyQuery.eq('symbol', symbolFilter);
@@ -235,10 +274,16 @@ const Reports: React.FC = () => {
         throw new Error('No pages found');
       }
 
-      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pdf = new jsPDF(
+        pages[0].getAttribute('data-orientation') === 'landscape' ? 'l' : 'p', 
+        'mm', 
+        'a4'
+      );
 
       for (let i = 0; i < pages.length; i++) {
         const page = pages[i];
+        const isLandscape = page.getAttribute('data-orientation') === 'landscape';
+
         const canvas = await html2canvas(page, {
           scale: 2,
           backgroundColor: '#ffffff',
@@ -248,11 +293,11 @@ const Reports: React.FC = () => {
         });
 
         const imgData = canvas.toDataURL('image/png', 1.0);
-        const pageWidth = pdf.internal.pageSize.getWidth();
-        const pageHeight = pdf.internal.pageSize.getHeight();
+        const pageWidth = isLandscape ? 297 : 210;
+        const pageHeight = isLandscape ? 210 : 297;
 
         if (i > 0) {
-          pdf.addPage();
+          pdf.addPage('a4', isLandscape ? 'l' : 'p');
         }
 
         pdf.addImage(imgData, 'PNG', 0, 0, pageWidth, pageHeight);
@@ -710,7 +755,9 @@ const Reports: React.FC = () => {
     if (
       tableMode === 'detailed' || 
       reportType === 'monthly' || 
-      reportType === 'custom_period'
+      periodFilter !== 'all' ||
+      reportType === 'annual' ||
+      reportType === 'detailed_commodity'
     ) {
       // Build Detailed Table Data
       const detailedTableData = periodHistoryData.map((row, index, arr) => {
@@ -757,7 +804,7 @@ const Reports: React.FC = () => {
           items: []
         });
       } else {
-        const chunkSize = 16;
+        const chunkSize = 20;
         for (let i = 0; i < detailedTableData.length; i += chunkSize) {
           pagesData.push({
             type: 'detailed_table',
@@ -777,7 +824,7 @@ const Reports: React.FC = () => {
           items: []
         });
       } else {
-        const chunkSize = 16;
+        const chunkSize = 25;
         for (let i = 0; i < summaryTableData.length; i += chunkSize) {
           pagesData.push({
             type: 'summary_table',
@@ -829,6 +876,10 @@ const Reports: React.FC = () => {
     box-sizing: border-box;
     box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
   }
+  .report-page[data-orientation="landscape"] {
+    width: 1123px;
+    min-height: 794px;
+  }
   @media print {
     .report-page {
       page-break-after: always;
@@ -836,7 +887,63 @@ const Reports: React.FC = () => {
       margin: 0;
       box-shadow: none;
     }
+    @page {
+      size: A4 portrait;
+    }
+    .report-page[data-orientation="landscape"] {
+      page: landscape-page;
+    }
+    @page landscape-page {
+      size: A4 landscape;
+    }
     body { background: white; }
+  }
+
+  .report-table {
+    width: 100%;
+    table-layout: auto;
+    border-collapse: collapse;
+    font-size: 10px;
+    color: #475569; /* Base color applied to table */
+  }
+  
+  .report-table th {
+    background-color: #0A1128;
+    color: #ffffff;
+    text-align: center;
+    font-weight: bold;
+    padding: 8px 6px;
+    border: 1px solid #cbd5e1;
+    font-size: 11px;
+    white-space: nowrap;
+  }
+
+  .report-table td {
+    padding: 6px;
+    border: 1px solid #e2e8f0;
+    vertical-align: middle;
+  }
+
+  /* Alternating rows */
+  .report-table tbody tr:nth-child(even) {
+    background-color: #f8fafc; /* slate-50 */
+  }
+  .report-table tbody tr:nth-child(odd) {
+    background-color: #ffffff;
+  }
+
+  /* Numeric columns */
+  .col-numeric {
+    text-align: center;
+    font-family: monospace;
+    white-space: nowrap;
+  }
+
+  /* Text columns */
+  .col-text {
+    text-align: right;
+    word-break: break-word;
+    white-space: normal;
   }
 `}</style>
 
@@ -915,7 +1022,96 @@ const Reports: React.FC = () => {
               </select>
             </div>
           )}
+        </div>
 
+        {/* Sector Commodities Selection */}
+        {(reportType === 'sector' || ((reportType === 'monthly' || reportType === 'annual') && monthlyScope === 'sector')) && sectorFilter && (
+          <div className="mb-6 p-4 border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-800/50">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 gap-4">
+              <h3 className="text-sm font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                السلع التابعة للقطاع
+                <span className="bg-primary-100 text-primary-700 px-2 py-0.5 rounded-full text-xs">
+                  تم اختيار {selectedCommodities.length} من أصل {sectorCommodities.length} سلعة داخل القطاع
+                </span>
+              </h3>
+              
+              <div className="flex gap-2 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setSelectedCommodities(sectorCommodities.map(c => c.symbol))}
+                  className="px-3 py-1.5 bg-white dark:bg-dark-card border border-slate-200 dark:border-slate-700 rounded hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                >
+                  تحديد الكل
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedCommodities([])}
+                  className="px-3 py-1.5 bg-white dark:bg-dark-card border border-slate-200 dark:border-slate-700 rounded hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                >
+                  إلغاء تحديد الكل
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedCommodities(sectorCommodities.map(c => c.symbol).filter(sym => !selectedCommodities.includes(sym)))}
+                  className="px-3 py-1.5 bg-white dark:bg-dark-card border border-slate-200 dark:border-slate-700 rounded hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                >
+                  عكس التحديد
+                </button>
+              </div>
+            </div>
+
+            <div className="mb-3">
+              <input
+                type="text"
+                placeholder="البحث عن سلعة (الرمز، الاسم العربي، الاسم الإنجليزي)..."
+                value={sectorCommoditySearch}
+                onChange={e => setSectorCommoditySearch(e.target.value)}
+                className="w-full border dark:border-dark-border rounded-lg px-3 py-2 outline-none dark:bg-dark-card dark:text-white focus:ring-2 focus:ring-primary-500 text-sm"
+              />
+            </div>
+
+            <div className="max-h-[240px] overflow-y-auto bg-white dark:bg-dark-card border border-slate-200 dark:border-slate-700 rounded-lg p-2">
+              {sectorCommodities.filter(c => {
+                const search = sectorCommoditySearch.toLowerCase();
+                return c.symbol.toLowerCase().includes(search) || 
+                       (c.name_ar && c.name_ar.toLowerCase().includes(search)) || 
+                       (c.name_en && c.name_en.toLowerCase().includes(search));
+              }).map(c => (
+                <label key={c.symbol} className="flex items-center gap-3 p-2 hover:bg-slate-50 dark:hover:bg-slate-800 rounded cursor-pointer border-b border-slate-100 dark:border-slate-800 last:border-0">
+                  <input
+                    type="checkbox"
+                    checked={selectedCommodities.includes(c.symbol)}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setSelectedCommodities([...selectedCommodities, c.symbol]);
+                      } else {
+                        setSelectedCommodities(selectedCommodities.filter(sym => sym !== c.symbol));
+                      }
+                    }}
+                    className="w-4 h-4 text-primary-600 rounded border-slate-300 focus:ring-primary-500"
+                  />
+                  <div className="flex-1 flex justify-between items-center">
+                    <div>
+                      <span className="font-bold text-[#1e3a8a] dark:text-blue-400 font-mono ml-2">{c.symbol}</span>
+                      <span className="text-slate-700 dark:text-slate-300">{c.name_ar}</span>
+                    </div>
+                    <span className="text-xs text-slate-500 dark:text-slate-400 font-mono bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded">
+                      {c.unit}
+                    </span>
+                  </div>
+                </label>
+              ))}
+              {sectorCommodities.length === 0 && (
+                <div className="p-4 text-center text-slate-500 text-sm">
+                  لا توجد سلع نشطة ومرئية في هذا القطاع
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Date Filters Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           {(reportType === 'monthly' || reportType === 'annual') ? (
             <>
               {reportType === 'monthly' && (
@@ -1040,10 +1236,10 @@ const Reports: React.FC = () => {
 
     {isGenerated && reportData && (
       <div className="bg-slate-200 dark:bg-slate-800 p-8 rounded-xl overflow-x-auto shadow-inner flex flex-col items-center gap-6">
-        <div ref={reportRef} className="flex flex-col gap-6 w-[794px]" style={{ fontFamily: 'Tajawal, sans-serif' }}>
+        <div ref={reportRef} className="flex flex-col gap-6" style={{ fontFamily: 'Tajawal, sans-serif' }}>
           
           {/* Cover Page */}
-          <div className="report-page shrink-0">
+          <div className="report-page shrink-0" data-orientation="portrait">
             <div className="flex flex-col justify-center items-center text-center h-full pt-20">
               <ReportLogo url={logoUrl} alt="Logo" className="w-[110px] h-auto mx-auto mb-10 object-contain report-logo" />
               <h1 className="text-5xl font-extrabold text-[#1e3a8a] mb-6">شبكة ليبيا للتجارة</h1>
@@ -1062,6 +1258,19 @@ const Reports: React.FC = () => {
                     <span className="font-mono" dir="ltr">{detailedStats.commodity.symbol}</span> | {detailedStats.commodity.sector}
                   </div>
                 )}
+                {((reportType === 'sector' || ((reportType === 'monthly' || reportType === 'annual') && monthlyScope === 'sector')) && sectorFilter) && (
+                  <div className="mb-4">
+                    <div className="text-xl text-[#1e3a8a] font-bold mb-2">
+                      القطاع: {sectors.find(s => s.sector_code === sectorFilter)?.name_ar || sectorFilter}
+                    </div>
+                    <div className="text-lg text-slate-600 font-medium mb-2">
+                      عدد السلع المختارة: <span className="font-mono">{selectedCommodities.length}</span>
+                    </div>
+                    <div className="text-md text-slate-500 font-mono" dir="ltr">
+                      {selectedCommodities.join(', ')}
+                    </div>
+                  </div>
+                )}
                 <div className="text-xl text-slate-500 font-medium">
                   تاريخ الإصدار: <span dir="ltr">{new Intl.DateTimeFormat('en-GB', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())}</span>
                 </div>
@@ -1078,7 +1287,7 @@ const Reports: React.FC = () => {
           {reportType === 'detailed_commodity' && detailedStats ? (
             <>
               {/* Page 2: Executive Summary & Indicators */}
-              <div className="report-page shrink-0">
+              <div className="report-page shrink-0" data-orientation="portrait">
                 <div className="absolute inset-0 z-0 flex items-center justify-center pointer-events-none"><ReportLogo url={logoUrl} className="w-[320px] h-auto object-contain grayscale opacity-[0.05] report-logo" /></div>
                 
                 <div className="flex justify-between items-center border-b-2 border-[#1e3a8a] pb-4 mb-8 relative z-10">
@@ -1153,7 +1362,7 @@ const Reports: React.FC = () => {
               </div>
 
               {/* Page 3: Chart */}
-              <div className="report-page shrink-0">
+              <div className="report-page shrink-0" data-orientation="portrait">
                 <div className="absolute inset-0 z-0 flex items-center justify-center pointer-events-none"><ReportLogo url={logoUrl} className="w-[320px] h-auto object-contain grayscale opacity-[0.05] report-logo" /></div>
                 
                 <div className="flex justify-between items-center border-b-2 border-[#1e3a8a] pb-4 mb-8 relative z-10">
@@ -1228,7 +1437,7 @@ const Reports: React.FC = () => {
 
               {/* Pages: Tables for history */}
               {detailedHistoryChunks.map((chunk, chunkIdx) => (
-                <div key={chunkIdx} className="report-page shrink-0">
+                <div key={chunkIdx} className="report-page shrink-0" data-orientation="landscape">
                   <div className="absolute inset-0 z-0 flex items-center justify-center pointer-events-none"><ReportLogo url={logoUrl} className="w-[320px] h-auto object-contain grayscale opacity-[0.05] report-logo" /></div>
                   
                   <div className="flex justify-between items-center border-b-2 border-[#1e3a8a] pb-4 mb-8 relative z-10">
@@ -1248,7 +1457,7 @@ const Reports: React.FC = () => {
                     <h4 className="text-lg font-bold text-[#1e3a8a] mb-4 border-r-4 border-[#b45309] pr-3 bg-slate-50 py-2">
                       الأرشيف التاريخي للسلعة {chunkIdx > 0 ? '(تابع)' : ''}
                     </h4>
-                    <table className="w-full text-[11px] text-right border-collapse">
+                    <table className="report-table">
                       <thead>
                         <tr className="bg-[#0A1128] text-white">
                           <th className="p-2 border border-slate-300">التاريخ</th>
@@ -1325,7 +1534,7 @@ const Reports: React.FC = () => {
             <>
               {/* Other Reports */}
               {/* Page 2: Summary */}
-              <div className="report-page shrink-0">
+              <div className="report-page shrink-0" data-orientation="portrait">
                 <div className="absolute inset-0 z-0 flex items-center justify-center pointer-events-none"><ReportLogo url={logoUrl} className="w-[320px] h-auto object-contain grayscale opacity-[0.05] report-logo" /></div>
                 
                 <div className="flex justify-between items-center border-b-2 border-[#1e3a8a] pb-4 mb-8 relative z-10">
@@ -1401,7 +1610,7 @@ const Reports: React.FC = () => {
 
               {/* Chart Page */}
               {includeCharts && chartInfo.data.length > 0 && (
-                <div className="report-page shrink-0">
+                <div className="report-page shrink-0" data-orientation="portrait">
                   <div className="absolute inset-0 z-0 flex items-center justify-center pointer-events-none"><ReportLogo url={logoUrl} className="w-[320px] h-auto object-contain grayscale opacity-[0.05] report-logo" /></div>
                   
                   <div className="flex justify-between items-center border-b-2 border-[#1e3a8a] pb-4 mb-8 relative z-10">
@@ -1480,7 +1689,7 @@ const Reports: React.FC = () => {
 
                             {/* Data Tables */}
               {pagesData.map((pageData, pageIdx) => (
-                <div key={pageIdx} className="report-page shrink-0">
+                <div key={pageIdx} className="report-page shrink-0" data-orientation={pageData.type === 'detailed_table' ? 'landscape' : 'portrait'}>
                   <div className="absolute inset-0 z-0 flex items-center justify-center pointer-events-none">
                     <ReportLogo url={logoUrl} className="w-[320px] h-auto object-contain grayscale opacity-[0.05] report-logo" />
                   </div>
@@ -1519,7 +1728,7 @@ const Reports: React.FC = () => {
                             لا توجد بيانات تاريخية خلال الفترة المحددة
                           </div>
                         ) : (
-                          <table className="w-full text-[9px] text-right border-collapse">
+                          <table className="report-table">
                             <thead>
                               <tr className="bg-[#0A1128] text-white">
                                 <th className="p-1.5 border border-slate-300">التاريخ</th>
@@ -1541,7 +1750,7 @@ const Reports: React.FC = () => {
                               {pageData.items.map((item: any, itemIdx: number) => {
                                 const sectorName = sectors.find((s: any) => s.sector_code === item.sector)?.name_ar || item.sector || '-';
                                 
-                                const hasPrev = item.prev_price !== null;
+                                const hasPrev = item.previous_price !== null && item.previous_price !== undefined;
                                 const changeValue = item.change_val;
                                 const changePercent = item.change_pct;
                                 
@@ -1566,9 +1775,9 @@ const Reports: React.FC = () => {
                                 }
 
                                 return (
-                                  <tr key={`${item.symbol}-${item.recorded_at}-${itemIdx}`} className="even:bg-slate-50">
+                                  <tr key={`${item.symbol}-${item.date}-${itemIdx}`} className="even:bg-slate-50">
                                     <td className="p-1 border border-slate-200 font-mono text-slate-500" dir="ltr">
-                                      {new Intl.DateTimeFormat('en-GB', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(item.recorded_at))}
+                                      {new Intl.DateTimeFormat('en-GB', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(item.date))}
                                     </td>
                                     <td className="p-1 border border-slate-200 font-mono text-slate-500" dir="ltr">{item.symbol}</td>
                                     <td className="p-1 border border-slate-200 font-bold text-[#1e3a8a] truncate max-w-[80px]">{item.name_ar}</td>
@@ -1577,7 +1786,7 @@ const Reports: React.FC = () => {
                                       {Number(item.price).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                     </td>
                                     <td className="p-1 border border-slate-200 font-mono text-slate-500" dir="ltr">
-                                      {hasPrev ? Number(item.prev_price).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '---'}
+                                      {hasPrev ? Number(item.previous_price).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '---'}
                                     </td>
                                     <td className={`p-1 border border-slate-200 font-mono ${cpColor}`} dir="ltr">{cvText}</td>
                                     <td className={`p-1 border border-slate-200 font-mono font-bold ${cpColor}`} dir="ltr">{cpText}</td>
@@ -1621,7 +1830,7 @@ const Reports: React.FC = () => {
                             لا توجد بيانات تاريخية خلال الفترة المحددة
                           </div>
                         ) : (
-                          <table className="w-full text-[9px] text-right border-collapse">
+                          <table className="report-table">
                             <thead>
                               <tr className="bg-[#0A1128] text-white">
                                 <th className="p-1.5 border border-slate-300">الرمز</th>
@@ -1713,7 +1922,7 @@ const Reports: React.FC = () => {
                           </div>
                         )}
 
-                        <table className="w-full text-[11px] text-right border-collapse">
+                        <table className="report-table">
                           <thead>
                             <tr className="bg-[#0A1128] text-white">
                               <th className="p-2 border border-slate-300">الرمز</th>
@@ -1816,7 +2025,7 @@ const Reports: React.FC = () => {
 
                             {/* Monthly Daily Tables */}
               {reportType === 'monthly' && includeDailyTable && monthlyDailyPages.map((pageData, pageIdx) => (
-                <div key={`md-${pageIdx}`} className="report-page shrink-0">
+                <div key={`md-${pageIdx}`} className="report-page shrink-0" data-orientation="landscape">
                   <div className="absolute inset-0 z-0 flex items-center justify-center pointer-events-none">
                     <ReportLogo url={logoUrl} className="w-[320px] h-auto object-contain grayscale opacity-[0.05] report-logo" />
                   </div>
@@ -1844,7 +2053,7 @@ const Reports: React.FC = () => {
                       )}
                     </h4>
 
-                    <table className="w-full text-[11px] text-right border-collapse">
+                    <table className="report-table">
                       <thead>
                         <tr className="bg-[#0A1128] text-white">
                           <th className="p-2 border border-slate-300">التاريخ</th>
@@ -1909,7 +2118,7 @@ const Reports: React.FC = () => {
 
               {/* News Section */}
               {includeNews && reportData.news && reportData.news.length > 0 && (
-                <div className="report-page shrink-0">
+                <div className="report-page shrink-0" data-orientation="portrait">
                   <div className="absolute inset-0 z-0 flex items-center justify-center pointer-events-none"><ReportLogo url={logoUrl} className="w-[320px] h-auto object-contain grayscale opacity-[0.05] report-logo" /></div>
                   
                   <div className="flex justify-between items-center border-b-2 border-[#1e3a8a] pb-4 mb-8 relative z-10">
@@ -1952,7 +2161,7 @@ const Reports: React.FC = () => {
 
               {/* Analyses Section */}
               {includeAnalyses && reportData.analyses && reportData.analyses.length > 0 && (
-                <div className="report-page shrink-0">
+                <div className="report-page shrink-0" data-orientation="portrait">
                   <div className="absolute inset-0 z-0 flex items-center justify-center pointer-events-none"><ReportLogo url={logoUrl} className="w-[320px] h-auto object-contain grayscale opacity-[0.05] report-logo" /></div>
                   
                   <div className="flex justify-between items-center border-b-2 border-[#1e3a8a] pb-4 mb-8 relative z-10">
@@ -1996,7 +2205,7 @@ const Reports: React.FC = () => {
           )}
 
           {adminNotes && (
-            <div className="report-page shrink-0">
+            <div className="report-page shrink-0" data-orientation="portrait">
               <div className="absolute inset-0 z-0 flex items-center justify-center pointer-events-none"><ReportLogo url={logoUrl} className="w-[320px] h-auto object-contain grayscale opacity-[0.05] report-logo" /></div>
               
               <div className="flex justify-between items-center border-b-2 border-[#1e3a8a] pb-4 mb-8 relative z-10">
