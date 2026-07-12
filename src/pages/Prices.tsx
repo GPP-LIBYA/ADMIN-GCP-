@@ -1,4 +1,4 @@
-import { useState, useEffect, FormEvent, useRef, ChangeEvent } from 'react';
+import React, { useState, useEffect, FormEvent, useRef, ChangeEvent } from 'react';
 import { supabase } from '../lib/supabase';
 import type { Commodity, CommodityCatalog, UnitsCatalog, SectorCatalog } from '../types';
 import { useAuthStore } from '../store/authStore';

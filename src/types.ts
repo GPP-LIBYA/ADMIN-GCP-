@@ -8,6 +8,7 @@ export interface AdminUser {
   is_active: boolean;
   can_manage_admins: boolean;
   can_manage_prices: boolean;
+  can_view_reports?: boolean;
   can_import_prices: boolean;
   can_manage_news: boolean;
   can_manage_analysis: boolean;
