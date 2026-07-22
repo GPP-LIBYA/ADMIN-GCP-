@@ -19,7 +19,6 @@ import Visits from './pages/Visits';
 import Settings from './pages/Settings';
 import ReportSettings from './pages/ReportSettings';
 import PublishedReports from './pages/PublishedReports';
-import PublicReports from './pages/PublicReports';
 import Admins from './pages/Admins';
 import Reports from './pages/Reports';
 
@@ -70,8 +69,6 @@ export default function App() {
     <HashRouter>
       <Routes>
         <Route path="/login" element={<Login />} />
-        
-        <Route path="/public-reports" element={<PublicReports />} />
         
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
         

@@ -231,23 +231,13 @@ export default function PublishedReports() {
           <h1 className="text-2xl font-bold text-slate-800">التقارير والدراسات (PDF)</h1>
           <p className="text-slate-500 mt-1">إدارة التقارير المرفوعة والمنشورة على المنصة العامة</p>
         </div>
-        <div className="flex items-center gap-3">
-          <a
-            href="#/public-reports"
-            target="_blank"
-            className="flex items-center justify-center gap-2 px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition-colors font-bold border border-slate-200"
-          >
-            <Eye size={20} />
-            <span>معاينة المنصة العامة</span>
-          </a>
-          <button
-            onClick={() => handleOpenModal()}
-            className="flex items-center justify-center gap-2 px-4 py-2 bg-[#1e3a8a] text-white rounded-lg hover:bg-blue-900 transition-colors"
-          >
-            <Plus size={20} />
-            <span>إضافة تقرير جديد</span>
-          </button>
-        </div>
+        <button
+          onClick={() => handleOpenModal()}
+          className="flex items-center justify-center gap-2 px-4 py-2 bg-[#1e3a8a] text-white rounded-lg hover:bg-blue-900 transition-colors"
+        >
+          <Plus size={20} />
+          <span>إضافة تقرير جديد</span>
+        </button>
       </div>
 
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
