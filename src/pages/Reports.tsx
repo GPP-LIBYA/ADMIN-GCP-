@@ -90,6 +90,11 @@ const Reports: React.FC = () => {
   const [reportStartDate, setReportStartDate] = useState('');
   const [reportEndDate, setReportEndDate] = useState('');
 
+  // Settings
+  const [logoLeft, setLogoLeft] = useState('https://i.postimg.cc/tCPyyJnm/58f6eba6-9dd7-45e2-8434-6730f9b4412c-removebg-preview.png');
+  const [logoMiddle, setLogoMiddle] = useState('https://i.postimg.cc/zfx5Psf9/cropped-NEW-LOGO-LTN-06-1-removebg-preview.png');
+  const [logoRight, setLogoRight] = useState('https://i.postimg.cc/j2mzhLdn/557538f9788c4d0bacb9518b4e9eaa16.webp');
+
   useEffect(() => {
     fetchCatalogs();
   }, []);
@@ -126,12 +131,16 @@ const Reports: React.FC = () => {
       const [sectorsRes, catalogRes, settingsRes] = await Promise.all([
         supabase.from('sectors_catalog').select('*').order('name_ar'),
         supabase.from('commodity_catalog').select('*').order('name_ar'),
-        supabase.from('platform_settings').select('*').limit(1).maybeSingle()
+        supabase.from('platform_settings').select('key, value').in('key', ['report_logo_left', 'report_logo_middle', 'report_logo_right', 'logo_url'])
       ]);
       if (sectorsRes.data) setSectors(sectorsRes.data);
       if (catalogRes.data) setCatalog(catalogRes.data);
       if (settingsRes.data) {
-        setLogoUrl(settingsRes.data.logo_url || (settingsRes.data as any).footer_logo_url || 'https://i.postimg.cc/zfx5Psf9/cropped-NEW-LOGO-LTN-06-1-removebg-preview.png');
+        const settingsMap = settingsRes.data.reduce((acc, curr) => ({ ...acc, [curr.key]: curr.value }), {} as Record<string, string>);
+        if (settingsMap.report_logo_left) setLogoLeft(settingsMap.report_logo_left);
+        if (settingsMap.report_logo_middle) setLogoMiddle(settingsMap.report_logo_middle);
+        if (settingsMap.report_logo_right) setLogoRight(settingsMap.report_logo_right);
+        if (settingsMap.logo_url) setLogoUrl(settingsMap.logo_url);
       }
     } catch (err) {
       console.error(err);
@@ -1240,45 +1249,55 @@ const Reports: React.FC = () => {
           
           {/* Cover Page */}
           <div className="report-page shrink-0" data-orientation="portrait">
-            <div className="flex flex-col justify-center items-center text-center h-full pt-20">
-              <ReportLogo url={logoUrl} alt="Logo" className="w-[110px] h-auto mx-auto mb-10 object-contain report-logo" />
-              <h1 className="text-5xl font-extrabold text-[#1e3a8a] mb-6">شبكة ليبيا للتجارة</h1>
-              <h2 className="text-3xl text-slate-600 mb-16 font-semibold">Libya Trade Network - Global Prices Platform</h2>
+            <div className="flex flex-col h-full pt-16 px-12">
+              <div className="flex justify-between items-center w-full mb-12 border-b-2 border-[#1e3a8a] pb-8">
+                <ReportLogo url={logoRight} alt="Right Logo" className="h-[80px] w-auto max-w-[250px] object-contain report-logo" />
+                <ReportLogo url={logoMiddle} alt="Middle Logo" className="h-[80px] w-auto max-w-[250px] object-contain report-logo" />
+                <ReportLogo url={logoLeft} alt="Left Logo" className="h-[80px] w-auto max-w-[250px] object-contain report-logo" />
+              </div>
               
-              <div className="inline-block border-y-4 border-[#b45309] py-8 px-16 mb-16 bg-slate-50/50">
-                <h3 className="text-4xl font-bold text-[#b45309] mb-8">{reportTitle}</h3>
-                <div className="text-xl text-[#1e3a8a] font-bold mb-4">
-                  نوع التقرير: {reportType === 'general' ? 'تقرير الأسعار العام' : reportType === 'sector' ? 'تقرير القطاع المخصص' : reportType === 'commodity' ? 'تقرير حركة سلعة محددة' : reportType === 'detailed_commodity' ? 'تقرير سلعة مفصل' : reportType === 'comparison' ? 'تقرير المقارنة' : reportType === 'news_analysis' ? 'تقرير الأخبار والتحليلات' : reportType === 'daily' ? 'تقرير الأسعار اليومي' : reportType === 'monthly' ? 'التقرير الشهري' : reportType === 'annual' ? 'التقرير السنوي' : 'التقرير الشامل'}
-                </div>
-                <div className="text-2xl text-slate-600 font-medium mb-4">
-                  الفترة: {reportType === 'daily' ? 'اليوم' : periodFilter === 'all' && reportType !== 'monthly' ? 'الكل' : (reportStartDate && reportEndDate) ? `من ${new Intl.DateTimeFormat('en-GB', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(reportStartDate))} إلى ${new Intl.DateTimeFormat('en-GB', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(reportEndDate))}` : reportType === 'monthly' ? `${reportMonth}/${reportYear}` : reportType === 'annual' ? reportYear : 'مخصصة'}
-                </div>
-                {reportType === 'detailed_commodity' && detailedStats && (
+              <div className="flex flex-col items-center text-center mt-12">
+                <h1 className="text-4xl font-extrabold text-[#1e3a8a] mb-2">منصة الأسعار العالمية (GCP)</h1>
+                <h2 className="text-2xl text-slate-600 mb-16 font-semibold">Global Prices Platform (GCP)</h2>
+                
+                <div className="inline-block border-y-4 border-[#b45309] py-8 px-16 mb-16 bg-slate-50/50 min-w-[60%]">
+                  <h3 className="text-4xl font-bold text-[#b45309] mb-8">{reportTitle}</h3>
                   <div className="text-xl text-[#1e3a8a] font-bold mb-4">
-                    <span className="font-mono" dir="ltr">{detailedStats.commodity.symbol}</span> | {detailedStats.commodity.sector}
+                    نوع التقرير: {reportType === 'general' ? 'تقرير الأسعار العام' : reportType === 'sector' ? 'تقرير القطاع المخصص' : reportType === 'commodity' ? 'تقرير حركة سلعة محددة' : reportType === 'detailed_commodity' ? 'تقرير سلعة مفصل' : reportType === 'comparison' ? 'تقرير المقارنة' : reportType === 'news_analysis' ? 'تقرير الأخبار والتحليلات' : reportType === 'daily' ? 'تقرير الأسعار اليومي' : reportType === 'monthly' ? 'التقرير الشهري' : reportType === 'annual' ? 'التقرير السنوي' : 'التقرير الشامل'}
                   </div>
-                )}
-                {((reportType === 'sector' || ((reportType === 'monthly' || reportType === 'annual') && monthlyScope === 'sector')) && sectorFilter) && (
-                  <div className="mb-4">
-                    <div className="text-xl text-[#1e3a8a] font-bold mb-2">
-                      القطاع: {sectors.find(s => s.sector_code === sectorFilter)?.name_ar || sectorFilter}
-                    </div>
-                    <div className="text-lg text-slate-600 font-medium mb-2">
-                      عدد السلع المختارة: <span className="font-mono">{selectedCommodities.length}</span>
-                    </div>
-                    <div className="text-md text-slate-500 font-mono" dir="ltr">
-                      {selectedCommodities.join(', ')}
-                    </div>
+                  <div className="text-2xl text-slate-600 font-medium mb-4">
+                    الفترة: {reportType === 'daily' ? 'اليوم' : periodFilter === 'all' && reportType !== 'monthly' ? 'الكل' : (reportStartDate && reportEndDate) ? `من ${new Intl.DateTimeFormat('en-GB', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(reportStartDate))} إلى ${new Intl.DateTimeFormat('en-GB', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(reportEndDate))}` : reportType === 'monthly' ? `${reportMonth}/${reportYear}` : reportType === 'annual' ? reportYear : 'مخصصة'}
                   </div>
-                )}
-                <div className="text-xl text-slate-500 font-medium">
-                  تاريخ الإصدار: <span dir="ltr">{new Intl.DateTimeFormat('en-GB', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())}</span>
+                  {reportType === 'detailed_commodity' && detailedStats && (
+                    <div className="text-xl text-[#1e3a8a] font-bold mb-4">
+                      <span className="font-mono" dir="ltr">{detailedStats.commodity.symbol}</span> | {detailedStats.commodity.sector}
+                    </div>
+                  )}
+                  {((reportType === 'sector' || ((reportType === 'monthly' || reportType === 'annual') && monthlyScope === 'sector')) && sectorFilter) && (
+                    <div className="mb-4">
+                      <div className="text-xl text-[#1e3a8a] font-bold mb-2">
+                        القطاع: {sectors.find(s => s.sector_code === sectorFilter)?.name_ar || sectorFilter}
+                      </div>
+                      <div className="text-lg text-slate-600 font-medium mb-2">
+                        عدد السلع المختارة: <span className="font-mono">{selectedCommodities.length}</span>
+                      </div>
+                      <div className="text-md text-slate-500 font-mono" dir="ltr">
+                        {selectedCommodities.join(', ')}
+                      </div>
+                    </div>
+                  )}
+                  <div className="text-xl text-slate-500 font-medium mt-8">
+                    تاريخ ووقت الإصدار: <span dir="ltr">{new Date().toLocaleString('en-GB')}</span>
+                  </div>
                 </div>
               </div>
 
-              <div className="mt-auto pb-12 pt-16 w-full text-center border-t-2 border-slate-100">
-                <p className="font-bold text-slate-800 text-xl mb-2">تم إنشاء هذا التقرير بواسطة منصة الأسعار العالمية</p>
-                <p className="font-bold text-slate-500 text-lg">Generated by Global Prices Platform</p>
+              <div className="mt-auto absolute bottom-12 left-12 right-12 border-t-2 border-slate-200 pt-6 flex justify-between items-center text-xs text-slate-500 font-medium z-10 bg-white">
+                <div className="flex flex-col">
+                  <span className="font-bold text-slate-800 text-sm">© Libya Trade Network</span>
+                  <span className="text-slate-600">Global Prices Platform (GCP)</span>
+                </div>
+                <div className="text-left font-bold text-slate-600" dir="ltr">Page 1 of {totalPagesCount}</div>
               </div>
             </div>
           </div>
@@ -1288,18 +1307,15 @@ const Reports: React.FC = () => {
             <>
               {/* Page 2: Executive Summary & Indicators */}
               <div className="report-page shrink-0" data-orientation="portrait">
-                <div className="absolute inset-0 z-0 flex items-center justify-center pointer-events-none"><ReportLogo url={logoUrl} className="w-[320px] h-auto object-contain grayscale opacity-[0.05] report-logo" /></div>
                 
-                <div className="flex justify-between items-center border-b-2 border-[#1e3a8a] pb-4 mb-8 relative z-10">
-                  <div className="flex items-center gap-4">
-                    <ReportLogo url={logoUrl} alt="Logo" className="w-[42px] h-auto object-contain report-logo" />
-                    <div>
-                      <h4 className="font-bold text-[#1e3a8a] text-lg">شبكة ليبيا للتجارة - الأسعار العالمية</h4>
-                      <h5 className="text-sm text-slate-500 font-medium">{reportTitle}</h5>
-                    </div>
+                
+                <div className="flex justify-between items-center border-b-2 border-slate-200 pb-4 mb-8 relative z-10">
+                  <div>
+                    <h4 className="font-bold text-slate-800 text-lg">منصة الأسعار العالمية (GCP)</h4>
+                    <h5 className="text-sm text-slate-500 font-medium">{reportTitle}</h5>
                   </div>
                   <div className="text-sm text-slate-500 font-medium font-mono" dir="ltr">
-                    {new Intl.DateTimeFormat('en-GB', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())}
+                    Page {++currentPageNum}
                   </div>
                 </div>
 
@@ -1353,28 +1369,25 @@ const Reports: React.FC = () => {
                 </div>
 
                 <div className="absolute bottom-12 left-12 right-12 border-t-2 border-slate-200 pt-6 flex justify-between items-center text-xs text-slate-500 font-medium z-10 bg-white">
-                  <div>
-                    <p className="font-bold text-slate-800 text-sm mb-1">تم إنشاء هذا التقرير بواسطة منصة الأسعار العالمية</p>
-                    <p className="font-bold text-slate-500">Generated by Global Prices Platform</p>
+                  <div className="flex flex-col">
+                    <span className="font-bold text-slate-800 text-sm">© Libya Trade Network</span>
+                    <span className="text-slate-600">Global Prices Platform (GCP)</span>
                   </div>
-                  <div className="text-left font-bold text-slate-600">صفحة {++currentPageNum} من {totalPagesCount}</div>
+                  <div className="text-left font-bold text-slate-600" dir="ltr">Page {currentPageNum} of {totalPagesCount}</div>
                 </div>
               </div>
 
               {/* Page 3: Chart */}
               <div className="report-page shrink-0" data-orientation="portrait">
-                <div className="absolute inset-0 z-0 flex items-center justify-center pointer-events-none"><ReportLogo url={logoUrl} className="w-[320px] h-auto object-contain grayscale opacity-[0.05] report-logo" /></div>
                 
-                <div className="flex justify-between items-center border-b-2 border-[#1e3a8a] pb-4 mb-8 relative z-10">
-                  <div className="flex items-center gap-4">
-                    <ReportLogo url={logoUrl} alt="Logo" className="w-[42px] h-auto object-contain report-logo" />
-                    <div>
-                      <h4 className="font-bold text-[#1e3a8a] text-lg">شبكة ليبيا للتجارة - الأسعار العالمية</h4>
-                      <h5 className="text-sm text-slate-500 font-medium">{reportTitle}</h5>
-                    </div>
+                
+                <div className="flex justify-between items-center border-b-2 border-slate-200 pb-4 mb-8 relative z-10">
+                  <div>
+                    <h4 className="font-bold text-slate-800 text-lg">منصة الأسعار العالمية (GCP)</h4>
+                    <h5 className="text-sm text-slate-500 font-medium">{reportTitle}</h5>
                   </div>
                   <div className="text-sm text-slate-500 font-medium font-mono" dir="ltr">
-                    {new Intl.DateTimeFormat('en-GB', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())}
+                    Page {++currentPageNum}
                   </div>
                 </div>
 
@@ -1427,31 +1440,28 @@ const Reports: React.FC = () => {
                 </div>
 
                 <div className="absolute bottom-12 left-12 right-12 border-t-2 border-slate-200 pt-6 flex justify-between items-center text-xs text-slate-500 font-medium z-10 bg-white">
-                  <div>
-                    <p className="font-bold text-slate-800 text-sm mb-1">تم إنشاء هذا التقرير بواسطة منصة الأسعار العالمية</p>
-                    <p className="font-bold text-slate-500">Generated by Global Prices Platform</p>
+                  <div className="flex flex-col">
+                    <span className="font-bold text-slate-800 text-sm">© Libya Trade Network</span>
+                    <span className="text-slate-600">Global Prices Platform (GCP)</span>
                   </div>
-                  <div className="text-left font-bold text-slate-600">صفحة {++currentPageNum} من {totalPagesCount}</div>
+                  <div className="text-left font-bold text-slate-600" dir="ltr">Page {currentPageNum} of {totalPagesCount}</div>
                 </div>
               </div>
 
               {/* Pages: Tables for history */}
               {detailedHistoryChunks.map((chunk, chunkIdx) => (
                 <div key={chunkIdx} className="report-page shrink-0" data-orientation="landscape">
-                  <div className="absolute inset-0 z-0 flex items-center justify-center pointer-events-none"><ReportLogo url={logoUrl} className="w-[320px] h-auto object-contain grayscale opacity-[0.05] report-logo" /></div>
                   
-                  <div className="flex justify-between items-center border-b-2 border-[#1e3a8a] pb-4 mb-8 relative z-10">
-                    <div className="flex items-center gap-4">
-                      <ReportLogo url={logoUrl} alt="Logo" className="w-[42px] h-auto object-contain report-logo" />
-                      <div>
-                        <h4 className="font-bold text-[#1e3a8a] text-lg">شبكة ليبيا للتجارة - الأسعار العالمية</h4>
-                        <h5 className="text-sm text-slate-500 font-medium">{reportTitle}</h5>
-                      </div>
-                    </div>
-                    <div className="text-sm text-slate-500 font-medium font-mono" dir="ltr">
-                      {new Intl.DateTimeFormat('en-GB', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())}
-                    </div>
+                  
+                  <div className="flex justify-between items-center border-b-2 border-slate-200 pb-4 mb-8 relative z-10">
+                  <div>
+                    <h4 className="font-bold text-slate-800 text-lg">منصة الأسعار العالمية (GCP)</h4>
+                    <h5 className="text-sm text-slate-500 font-medium">{reportTitle}</h5>
                   </div>
+                  <div className="text-sm text-slate-500 font-medium font-mono" dir="ltr">
+                    Page {++currentPageNum}
+                  </div>
+                </div>
 
                   <div className="relative z-10">
                     <h4 className="text-lg font-bold text-[#1e3a8a] mb-4 border-r-4 border-[#b45309] pr-3 bg-slate-50 py-2">
@@ -1521,12 +1531,12 @@ const Reports: React.FC = () => {
                   </div>
 
                   <div className="absolute bottom-12 left-12 right-12 border-t-2 border-slate-200 pt-6 flex justify-between items-center text-xs text-slate-500 font-medium z-10 bg-white">
-                    <div>
-                      <p className="font-bold text-slate-800 text-sm mb-1">تم إنشاء هذا التقرير بواسطة منصة الأسعار العالمية</p>
-                      <p className="font-bold text-slate-500">Generated by Global Prices Platform</p>
-                    </div>
-                    <div className="text-left font-bold text-slate-600">صفحة {++currentPageNum} من {totalPagesCount}</div>
+                  <div className="flex flex-col">
+                    <span className="font-bold text-slate-800 text-sm">© Libya Trade Network</span>
+                    <span className="text-slate-600">Global Prices Platform (GCP)</span>
                   </div>
+                  <div className="text-left font-bold text-slate-600" dir="ltr">Page {currentPageNum} of {totalPagesCount}</div>
+                </div>
                 </div>
               ))}
             </>
@@ -1535,18 +1545,15 @@ const Reports: React.FC = () => {
               {/* Other Reports */}
               {/* Page 2: Summary */}
               <div className="report-page shrink-0" data-orientation="portrait">
-                <div className="absolute inset-0 z-0 flex items-center justify-center pointer-events-none"><ReportLogo url={logoUrl} className="w-[320px] h-auto object-contain grayscale opacity-[0.05] report-logo" /></div>
                 
-                <div className="flex justify-between items-center border-b-2 border-[#1e3a8a] pb-4 mb-8 relative z-10">
-                  <div className="flex items-center gap-4">
-                    <ReportLogo url={logoUrl} alt="Logo" className="w-[42px] h-auto object-contain report-logo" />
-                    <div>
-                      <h4 className="font-bold text-[#1e3a8a] text-lg">شبكة ليبيا للتجارة - الأسعار العالمية</h4>
-                      <h5 className="text-sm text-slate-500 font-medium">{reportTitle}</h5>
-                    </div>
+                
+                <div className="flex justify-between items-center border-b-2 border-slate-200 pb-4 mb-8 relative z-10">
+                  <div>
+                    <h4 className="font-bold text-slate-800 text-lg">منصة الأسعار العالمية (GCP)</h4>
+                    <h5 className="text-sm text-slate-500 font-medium">{reportTitle}</h5>
                   </div>
                   <div className="text-sm text-slate-500 font-medium font-mono" dir="ltr">
-                    {new Intl.DateTimeFormat('en-GB', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())}
+                    Page {++currentPageNum}
                   </div>
                 </div>
 
@@ -1600,31 +1607,28 @@ const Reports: React.FC = () => {
                 </div>
 
                 <div className="absolute bottom-12 left-12 right-12 border-t-2 border-slate-200 pt-6 flex justify-between items-center text-xs text-slate-500 font-medium z-10 bg-white">
-                  <div>
-                    <p className="font-bold text-slate-800 text-sm mb-1">تم إنشاء هذا التقرير بواسطة منصة الأسعار العالمية</p>
-                    <p className="font-bold text-slate-500">Generated by Global Prices Platform</p>
+                  <div className="flex flex-col">
+                    <span className="font-bold text-slate-800 text-sm">© Libya Trade Network</span>
+                    <span className="text-slate-600">Global Prices Platform (GCP)</span>
                   </div>
-                  <div className="text-left font-bold text-slate-600">صفحة {++currentPageNum} من {totalPagesCount}</div>
+                  <div className="text-left font-bold text-slate-600" dir="ltr">Page {currentPageNum} of {totalPagesCount}</div>
                 </div>
               </div>
 
               {/* Chart Page */}
               {includeCharts && chartInfo.data.length > 0 && (
                 <div className="report-page shrink-0" data-orientation="portrait">
-                  <div className="absolute inset-0 z-0 flex items-center justify-center pointer-events-none"><ReportLogo url={logoUrl} className="w-[320px] h-auto object-contain grayscale opacity-[0.05] report-logo" /></div>
                   
-                  <div className="flex justify-between items-center border-b-2 border-[#1e3a8a] pb-4 mb-8 relative z-10">
-                    <div className="flex items-center gap-4">
-                      <ReportLogo url={logoUrl} alt="Logo" className="w-[42px] h-auto object-contain report-logo" />
-                      <div>
-                        <h4 className="font-bold text-[#1e3a8a] text-lg">شبكة ليبيا للتجارة - الأسعار العالمية</h4>
-                        <h5 className="text-sm text-slate-500 font-medium">{reportTitle}</h5>
-                      </div>
-                    </div>
-                    <div className="text-sm text-slate-500 font-medium font-mono" dir="ltr">
-                      {new Intl.DateTimeFormat('en-GB', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())}
-                    </div>
+                  
+                  <div className="flex justify-between items-center border-b-2 border-slate-200 pb-4 mb-8 relative z-10">
+                  <div>
+                    <h4 className="font-bold text-slate-800 text-lg">منصة الأسعار العالمية (GCP)</h4>
+                    <h5 className="text-sm text-slate-500 font-medium">{reportTitle}</h5>
                   </div>
+                  <div className="text-sm text-slate-500 font-medium font-mono" dir="ltr">
+                    Page {++currentPageNum}
+                  </div>
+                </div>
 
                   <div className="relative z-10">
                     <h4 className="text-lg font-bold text-[#1e3a8a] mb-4 border-r-4 border-[#b45309] pr-3 bg-slate-50 py-2 flex items-center justify-between">
@@ -1678,34 +1682,29 @@ const Reports: React.FC = () => {
                   </div>
 
                   <div className="absolute bottom-12 left-12 right-12 border-t-2 border-slate-200 pt-6 flex justify-between items-center text-xs text-slate-500 font-medium z-10 bg-white">
-                    <div>
-                      <p className="font-bold text-slate-800 text-sm mb-1">تم إنشاء هذا التقرير بواسطة منصة الأسعار العالمية</p>
-                      <p className="font-bold text-slate-500">Generated by Global Prices Platform</p>
-                    </div>
-                    <div className="text-left font-bold text-slate-600">صفحة {++currentPageNum} من {totalPagesCount}</div>
+                  <div className="flex flex-col">
+                    <span className="font-bold text-slate-800 text-sm">© Libya Trade Network</span>
+                    <span className="text-slate-600">Global Prices Platform (GCP)</span>
                   </div>
+                  <div className="text-left font-bold text-slate-600" dir="ltr">Page {currentPageNum} of {totalPagesCount}</div>
+                </div>
                 </div>
               )}
 
                             {/* Data Tables */}
               {pagesData.map((pageData, pageIdx) => (
                 <div key={pageIdx} className="report-page shrink-0" data-orientation={pageData.type === 'detailed_table' ? 'landscape' : 'portrait'}>
-                  <div className="absolute inset-0 z-0 flex items-center justify-center pointer-events-none">
-                    <ReportLogo url={logoUrl} className="w-[320px] h-auto object-contain grayscale opacity-[0.05] report-logo" />
-                  </div>
                   
-                  <div className="flex justify-between items-center border-b-2 border-[#1e3a8a] pb-4 mb-8 relative z-10">
-                    <div className="flex items-center gap-4">
-                      <ReportLogo url={logoUrl} alt="Logo" className="w-[42px] h-auto object-contain report-logo" />
-                      <div>
-                        <h4 className="font-bold text-[#1e3a8a] text-lg">شبكة ليبيا للتجارة - الأسعار العالمية</h4>
-                        <h5 className="text-sm text-slate-500 font-medium">{reportTitle}</h5>
-                      </div>
-                    </div>
-                    <div className="text-sm text-slate-500 font-medium font-mono" dir="ltr">
-                      {new Intl.DateTimeFormat('en-GB', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())}
-                    </div>
+                  
+                  <div className="flex justify-between items-center border-b-2 border-slate-200 pb-4 mb-8 relative z-10">
+                  <div>
+                    <h4 className="font-bold text-slate-800 text-lg">منصة الأسعار العالمية (GCP)</h4>
+                    <h5 className="text-sm text-slate-500 font-medium">{reportTitle}</h5>
                   </div>
+                  <div className="text-sm text-slate-500 font-medium font-mono" dir="ltr">
+                    Page {++currentPageNum}
+                  </div>
+                </div>
 
                   <div className="relative z-10">
                     {pageData.type === 'detailed_table' ? (
@@ -2014,34 +2013,29 @@ const Reports: React.FC = () => {
                   </div>
 
                   <div className="absolute bottom-12 left-12 right-12 border-t-2 border-slate-200 pt-6 flex justify-between items-center text-xs text-slate-500 font-medium z-10 bg-white">
-                    <div>
-                      <p className="font-bold text-slate-800 text-sm mb-1">تم إنشاء هذا التقرير بواسطة منصة الأسعار العالمية</p>
-                      <p className="font-bold text-slate-500">Generated by Global Prices Platform</p>
-                    </div>
-                    <div className="text-left font-bold text-slate-600">صفحة {++currentPageNum} من {totalPagesCount}</div>
+                  <div className="flex flex-col">
+                    <span className="font-bold text-slate-800 text-sm">© Libya Trade Network</span>
+                    <span className="text-slate-600">Global Prices Platform (GCP)</span>
                   </div>
+                  <div className="text-left font-bold text-slate-600" dir="ltr">Page {currentPageNum} of {totalPagesCount}</div>
+                </div>
                 </div>
               ))}
 
                             {/* Monthly Daily Tables */}
               {reportType === 'monthly' && includeDailyTable && monthlyDailyPages.map((pageData, pageIdx) => (
                 <div key={`md-${pageIdx}`} className="report-page shrink-0" data-orientation="landscape">
-                  <div className="absolute inset-0 z-0 flex items-center justify-center pointer-events-none">
-                    <ReportLogo url={logoUrl} className="w-[320px] h-auto object-contain grayscale opacity-[0.05] report-logo" />
-                  </div>
                   
-                  <div className="flex justify-between items-center border-b-2 border-[#1e3a8a] pb-4 mb-8 relative z-10">
-                    <div className="flex items-center gap-4">
-                      <ReportLogo url={logoUrl} alt="Logo" className="w-[42px] h-auto object-contain report-logo" />
-                      <div>
-                        <h4 className="font-bold text-[#1e3a8a] text-lg">شبكة ليبيا للتجارة - الأسعار العالمية</h4>
-                        <h5 className="text-sm text-slate-500 font-medium">{reportTitle}</h5>
-                      </div>
-                    </div>
-                    <div className="text-sm text-slate-500 font-medium font-mono" dir="ltr">
-                      {new Intl.DateTimeFormat('en-GB', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())}
-                    </div>
+                  
+                  <div className="flex justify-between items-center border-b-2 border-slate-200 pb-4 mb-8 relative z-10">
+                  <div>
+                    <h4 className="font-bold text-slate-800 text-lg">منصة الأسعار العالمية (GCP)</h4>
+                    <h5 className="text-sm text-slate-500 font-medium">{reportTitle}</h5>
                   </div>
+                  <div className="text-sm text-slate-500 font-medium font-mono" dir="ltr">
+                    Page {++currentPageNum}
+                  </div>
+                </div>
 
                   <div className="relative z-10">
                     <h4 className="text-lg font-bold text-[#1e3a8a] mb-4 border-r-4 border-[#b45309] pr-3 bg-slate-50 py-2 flex items-center justify-between">
@@ -2107,32 +2101,29 @@ const Reports: React.FC = () => {
                   </div>
 
                   <div className="absolute bottom-12 left-12 right-12 border-t-2 border-slate-200 pt-6 flex justify-between items-center text-xs text-slate-500 font-medium z-10 bg-white">
-                    <div>
-                      <p className="font-bold text-slate-800 text-sm mb-1">تم إنشاء هذا التقرير بواسطة منصة الأسعار العالمية</p>
-                      <p className="font-bold text-slate-500">Generated by Global Prices Platform</p>
-                    </div>
-                    <div className="text-left font-bold text-slate-600">صفحة {++currentPageNum} من {totalPagesCount}</div>
+                  <div className="flex flex-col">
+                    <span className="font-bold text-slate-800 text-sm">© Libya Trade Network</span>
+                    <span className="text-slate-600">Global Prices Platform (GCP)</span>
                   </div>
+                  <div className="text-left font-bold text-slate-600" dir="ltr">Page {currentPageNum} of {totalPagesCount}</div>
+                </div>
                 </div>
               ))}
 
               {/* News Section */}
               {includeNews && reportData.news && reportData.news.length > 0 && (
                 <div className="report-page shrink-0" data-orientation="portrait">
-                  <div className="absolute inset-0 z-0 flex items-center justify-center pointer-events-none"><ReportLogo url={logoUrl} className="w-[320px] h-auto object-contain grayscale opacity-[0.05] report-logo" /></div>
                   
-                  <div className="flex justify-between items-center border-b-2 border-[#1e3a8a] pb-4 mb-8 relative z-10">
-                    <div className="flex items-center gap-4">
-                      <ReportLogo url={logoUrl} alt="Logo" className="w-[42px] h-auto object-contain report-logo" />
-                      <div>
-                        <h4 className="font-bold text-[#1e3a8a] text-lg">شبكة ليبيا للتجارة - الأسعار العالمية</h4>
-                        <h5 className="text-sm text-slate-500 font-medium">{reportTitle}</h5>
-                      </div>
-                    </div>
-                    <div className="text-sm text-slate-500 font-medium font-mono" dir="ltr">
-                      {new Intl.DateTimeFormat('en-GB', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())}
-                    </div>
+                  
+                  <div className="flex justify-between items-center border-b-2 border-slate-200 pb-4 mb-8 relative z-10">
+                  <div>
+                    <h4 className="font-bold text-slate-800 text-lg">منصة الأسعار العالمية (GCP)</h4>
+                    <h5 className="text-sm text-slate-500 font-medium">{reportTitle}</h5>
                   </div>
+                  <div className="text-sm text-slate-500 font-medium font-mono" dir="ltr">
+                    Page {++currentPageNum}
+                  </div>
+                </div>
 
                   <div className="relative z-10">
                     <h4 className="text-lg font-bold text-[#1e3a8a] mb-4 border-r-4 border-[#b45309] pr-3 bg-slate-50 py-2">آخر الأخبار</h4>
@@ -2150,32 +2141,29 @@ const Reports: React.FC = () => {
                   </div>
 
                   <div className="absolute bottom-12 left-12 right-12 border-t-2 border-slate-200 pt-6 flex justify-between items-center text-xs text-slate-500 font-medium z-10 bg-white">
-                    <div>
-                      <p className="font-bold text-slate-800 text-sm mb-1">تم إنشاء هذا التقرير بواسطة منصة الأسعار العالمية</p>
-                      <p className="font-bold text-slate-500">Generated by Global Prices Platform</p>
-                    </div>
-                    <div className="text-left font-bold text-slate-600">صفحة {++currentPageNum} من {totalPagesCount}</div>
+                  <div className="flex flex-col">
+                    <span className="font-bold text-slate-800 text-sm">© Libya Trade Network</span>
+                    <span className="text-slate-600">Global Prices Platform (GCP)</span>
                   </div>
+                  <div className="text-left font-bold text-slate-600" dir="ltr">Page {currentPageNum} of {totalPagesCount}</div>
+                </div>
                 </div>
               )}
 
               {/* Analyses Section */}
               {includeAnalyses && reportData.analyses && reportData.analyses.length > 0 && (
                 <div className="report-page shrink-0" data-orientation="portrait">
-                  <div className="absolute inset-0 z-0 flex items-center justify-center pointer-events-none"><ReportLogo url={logoUrl} className="w-[320px] h-auto object-contain grayscale opacity-[0.05] report-logo" /></div>
                   
-                  <div className="flex justify-between items-center border-b-2 border-[#1e3a8a] pb-4 mb-8 relative z-10">
-                    <div className="flex items-center gap-4">
-                      <ReportLogo url={logoUrl} alt="Logo" className="w-[42px] h-auto object-contain report-logo" />
-                      <div>
-                        <h4 className="font-bold text-[#1e3a8a] text-lg">شبكة ليبيا للتجارة - الأسعار العالمية</h4>
-                        <h5 className="text-sm text-slate-500 font-medium">{reportTitle}</h5>
-                      </div>
-                    </div>
-                    <div className="text-sm text-slate-500 font-medium font-mono" dir="ltr">
-                      {new Intl.DateTimeFormat('en-GB', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())}
-                    </div>
+                  
+                  <div className="flex justify-between items-center border-b-2 border-slate-200 pb-4 mb-8 relative z-10">
+                  <div>
+                    <h4 className="font-bold text-slate-800 text-lg">منصة الأسعار العالمية (GCP)</h4>
+                    <h5 className="text-sm text-slate-500 font-medium">{reportTitle}</h5>
                   </div>
+                  <div className="text-sm text-slate-500 font-medium font-mono" dir="ltr">
+                    Page {++currentPageNum}
+                  </div>
+                </div>
 
                   <div className="relative z-10">
                     <h4 className="text-lg font-bold text-[#1e3a8a] mb-4 border-r-4 border-[#b45309] pr-3 bg-slate-50 py-2">أحدث التحليلات</h4>
@@ -2193,12 +2181,12 @@ const Reports: React.FC = () => {
                   </div>
 
                   <div className="absolute bottom-12 left-12 right-12 border-t-2 border-slate-200 pt-6 flex justify-between items-center text-xs text-slate-500 font-medium z-10 bg-white">
-                    <div>
-                      <p className="font-bold text-slate-800 text-sm mb-1">تم إنشاء هذا التقرير بواسطة منصة الأسعار العالمية</p>
-                      <p className="font-bold text-slate-500">Generated by Global Prices Platform</p>
-                    </div>
-                    <div className="text-left font-bold text-slate-600">صفحة {++currentPageNum} من {totalPagesCount}</div>
+                  <div className="flex flex-col">
+                    <span className="font-bold text-slate-800 text-sm">© Libya Trade Network</span>
+                    <span className="text-slate-600">Global Prices Platform (GCP)</span>
                   </div>
+                  <div className="text-left font-bold text-slate-600" dir="ltr">Page {currentPageNum} of {totalPagesCount}</div>
+                </div>
                 </div>
               )}
             </>
@@ -2206,20 +2194,17 @@ const Reports: React.FC = () => {
 
           {adminNotes && (
             <div className="report-page shrink-0" data-orientation="portrait">
-              <div className="absolute inset-0 z-0 flex items-center justify-center pointer-events-none"><ReportLogo url={logoUrl} className="w-[320px] h-auto object-contain grayscale opacity-[0.05] report-logo" /></div>
               
-              <div className="flex justify-between items-center border-b-2 border-[#1e3a8a] pb-4 mb-8 relative z-10">
-                <div className="flex items-center gap-4">
-                  <ReportLogo url={logoUrl} alt="Logo" className="w-[42px] h-auto object-contain report-logo" />
+              
+              <div className="flex justify-between items-center border-b-2 border-slate-200 pb-4 mb-8 relative z-10">
                   <div>
-                    <h4 className="font-bold text-[#1e3a8a] text-lg">شبكة ليبيا للتجارة - الأسعار العالمية</h4>
+                    <h4 className="font-bold text-slate-800 text-lg">منصة الأسعار العالمية (GCP)</h4>
                     <h5 className="text-sm text-slate-500 font-medium">{reportTitle}</h5>
                   </div>
+                  <div className="text-sm text-slate-500 font-medium font-mono" dir="ltr">
+                    Page {++currentPageNum}
+                  </div>
                 </div>
-                <div className="text-sm text-slate-500 font-medium font-mono" dir="ltr">
-                  {new Intl.DateTimeFormat('en-GB', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())}
-                </div>
-              </div>
 
               <div className="relative z-10">
                 <h4 className="text-lg font-bold text-[#1e3a8a] mb-4 border-r-4 border-[#b45309] pr-3 bg-slate-50 py-2">ملاحظات السوبر أدمن</h4>
@@ -2227,12 +2212,12 @@ const Reports: React.FC = () => {
               </div>
 
               <div className="absolute bottom-12 left-12 right-12 border-t-2 border-slate-200 pt-6 flex justify-between items-center text-xs text-slate-500 font-medium z-10 bg-white">
-                <div>
-                  <p className="font-bold text-slate-800 text-sm mb-1">تم إنشاء هذا التقرير بواسطة منصة الأسعار العالمية</p>
-                  <p className="font-bold text-slate-500">Generated by Global Prices Platform</p>
+                  <div className="flex flex-col">
+                    <span className="font-bold text-slate-800 text-sm">© Libya Trade Network</span>
+                    <span className="text-slate-600">Global Prices Platform (GCP)</span>
+                  </div>
+                  <div className="text-left font-bold text-slate-600" dir="ltr">Page {currentPageNum} of {totalPagesCount}</div>
                 </div>
-                <div className="text-left font-bold text-slate-600">صفحة {++currentPageNum} من {totalPagesCount}</div>
-              </div>
             </div>
           )}
 

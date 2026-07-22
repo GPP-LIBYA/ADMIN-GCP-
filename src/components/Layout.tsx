@@ -32,6 +32,8 @@ export default function Layout({ children }: { children: ReactNode }) {
     { name: 'الأسعار', href: '/prices', icon: Tag, show: adminUser?.role === 'super_admin' || adminUser?.can_manage_prices },
     { name: 'أرشيف الأسعار', href: '/history', icon: History, show: adminUser?.role === 'super_admin' || adminUser?.can_manage_prices || adminUser?.can_view_reports },
     { name: 'التقارير', href: '/reports', icon: FileText, show: adminUser?.role === 'super_admin' },
+    { name: 'التقارير المنشورة', href: '/published-reports', icon: FileText, show: adminUser?.role === 'super_admin' || adminUser?.can_manage_analysis },
+    { name: 'إعدادات التقارير', href: '/report-settings', icon: FileText, show: adminUser?.role === 'super_admin' || adminUser?.can_manage_settings },
     { name: 'الأخبار', href: '/news', icon: Newspaper, show: adminUser?.role === 'super_admin' || adminUser?.can_manage_news },
     { name: 'التحليلات', href: '/analysis', icon: BarChart2, show: adminUser?.role === 'super_admin' || adminUser?.can_manage_analysis },
     { name: 'الرسائل', href: '/messages', icon: MessageSquare, show: adminUser?.role === 'super_admin' || adminUser?.can_manage_messages },

@@ -17,6 +17,9 @@ import Analysis from './pages/Analysis';
 import Messages from './pages/Messages';
 import Visits from './pages/Visits';
 import Settings from './pages/Settings';
+import ReportSettings from './pages/ReportSettings';
+import PublishedReports from './pages/PublishedReports';
+import PublicReports from './pages/PublicReports';
 import Admins from './pages/Admins';
 import Reports from './pages/Reports';
 
@@ -68,6 +71,8 @@ export default function App() {
       <Routes>
         <Route path="/login" element={<Login />} />
         
+        <Route path="/public-reports" element={<PublicReports />} />
+        
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
         
         <Route path="/dashboard" element={
@@ -118,6 +123,12 @@ export default function App() {
           </ProtectedRoute>
         } />
 
+        <Route path="/report-settings" element={
+          <ProtectedRoute requiredPermission="can_manage_settings">
+            <ReportSettings />
+          </ProtectedRoute>
+        } />
+
         <Route path="/admins" element={
           <ProtectedRoute requiredPermission="can_manage_admins">
             <Admins />
@@ -127,6 +138,12 @@ export default function App() {
         <Route path="/reports" element={
           <ProtectedRoute>
             <Reports />
+          </ProtectedRoute>
+        } />
+        
+        <Route path="/published-reports" element={
+          <ProtectedRoute>
+            <PublishedReports />
           </ProtectedRoute>
         } />
         

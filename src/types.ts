@@ -93,6 +93,9 @@ export interface PlatformSettings {
   contact_email: string | null;
   contact_phone: string | null;
   maintenance_mode: boolean;
+  report_logo_left?: string | null;
+  report_logo_middle?: string | null;
+  report_logo_right?: string | null;
   updated_at: string;
 }
 
@@ -116,6 +119,27 @@ export interface CommodityCatalog {
   sector: string;
   default_unit: string;
   is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Report {
+  id: string;
+  title_ar: string;
+  title_en: string;
+  description_ar: string | null;
+  description_en: string | null;
+  sector: string | null;
+  tags: string[];
+  report_date: string;
+  status: 'draft' | 'published' | 'archived';
+  cover_image_url: string | null;
+  pdf_url: string;
+  file_size: number | null;
+  page_count: number | null;
+  uploaded_by: string | null;
+  views_count: number;
+  downloads_count: number;
   created_at: string;
   updated_at: string;
 }
