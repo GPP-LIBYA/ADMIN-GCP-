@@ -89,7 +89,7 @@ const ReportSettings: React.FC = () => {
     setLoading(true);
     try {
       const fileExt = file.name.split('.').pop();
-      const fileName = `${key}-${Date.now()}.${fileExt}`;
+      const fileName = `${String(key)}-${Date.now()}.${fileExt}`;
       const filePath = `${fileName}`;
 
       const { error: uploadError } = await supabase.storage

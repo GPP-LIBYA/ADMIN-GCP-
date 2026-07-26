@@ -55,13 +55,54 @@ export interface NewsArticle {
   updated_at: string;
 }
 
-export interface Analysis {
+export interface Report {
   id: string;
-  title: string;
-  content: string;
-  asset_symbol: string | null;
-  author: string | null;
+  title_ar: string;
+  title_en: string;
+  description_ar?: string | null;
+  description_en?: string | null;
+  sector?: string | null;
+  keywords?: string[];
+  report_date: string;
+  status: 'draft' | 'published' | 'archived';
   is_published: boolean;
+  cover_image_url?: string | null;
+  pdf_url: string;
+  file_size?: number | null;
+  pages_count?: number | null;
+  created_by?: string | null;
+  views_count?: number;
+  downloads_count?: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Analysis {
+  id: string | number;
+  // Old Analysis fields
+  title?: string;
+  content?: string;
+  asset_symbol?: string | null;
+  author?: string | null;
+  is_published?: boolean;
+
+  // Report fields
+  title_ar?: string;
+  title_en?: string;
+  description_ar?: string | null;
+  description_en?: string | null;
+  sector?: string | null;
+  tags?: string[];
+  report_date?: string;
+  status?: 'draft' | 'published' | 'archived';
+  cover_image_url?: string | null;
+  pdf_url?: string;
+  file_size?: number | null;
+  page_count?: number | null;
+  uploaded_by?: string | null;
+  views_count?: number;
+  downloads_count?: number;
+
   created_at: string;
   updated_at: string;
 }
@@ -119,27 +160,6 @@ export interface CommodityCatalog {
   sector: string;
   default_unit: string;
   is_active: boolean;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface Report {
-  id: string;
-  title_ar: string;
-  title_en: string;
-  description_ar: string | null;
-  description_en: string | null;
-  sector: string | null;
-  tags: string[];
-  report_date: string;
-  status: 'draft' | 'published' | 'archived';
-  cover_image_url: string | null;
-  pdf_url: string;
-  file_size: number | null;
-  page_count: number | null;
-  uploaded_by: string | null;
-  views_count: number;
-  downloads_count: number;
   created_at: string;
   updated_at: string;
 }

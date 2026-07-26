@@ -1951,6 +1951,8 @@ const Reports: React.FC = () => {
                               const analysis = getCommodityAnalysis(item.symbol) || {
                                 change_value: 0,
                                 change_percent: 0,
+                                price: item.price,
+                                previous_price: item.previous_price || item.price,
                                 maxPrice: item.price,
                                 minPrice: item.price,
                                 averagePrice: item.price,

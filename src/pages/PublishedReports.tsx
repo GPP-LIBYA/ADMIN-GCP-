@@ -60,7 +60,7 @@ export default function PublishedReports() {
       setDescriptionAr(report.description_ar || '');
       setDescriptionEn(report.description_en || '');
       setSector(report.sector || '');
-      setTags(report.tags.join(', '));
+      setTags(report?.keywords ? report.keywords.join(', ') : '');
       setReportDate(report.report_date);
       setStatus(report.status);
     } else {
@@ -87,7 +87,7 @@ export default function PublishedReports() {
       let pdfUrl = editingReport?.pdf_url || '';
       let coverUrl = editingReport?.cover_image_url || null;
       let fileSize = editingReport?.file_size || null;
-      let pageCount = editingReport?.page_count || null;
+      let pageCount = editingReport?.pages_count || editingReport?.page_count || null;
 
       // Upload PDF if selected
       if (pdfFile) {
@@ -137,14 +137,15 @@ export default function PublishedReports() {
         description_ar: descriptionAr,
         description_en: descriptionEn,
         sector,
-        tags: tagsArray,
+        keywords: tagsArray,
         report_date: reportDate,
         status,
+        is_published: status === 'published',
         pdf_url: pdfUrl,
         cover_image_url: coverUrl,
         file_size: fileSize,
-        page_count: pageCount,
-        uploaded_by: adminUser?.id,
+        pages_count: pageCount,
+        created_by: adminUser?.id,
         updated_at: new Date().toISOString()
       };
 
@@ -174,7 +175,7 @@ export default function PublishedReports() {
     }
   };
 
-  const handleDelete = async (id: string, pdfUrl: string, coverUrl: string | null) => {
+  const handleDelete = async (id: string | number, pdfUrl: string, coverUrl: string | null) => {
     if (!window.confirm('هل أنت متأكد من حذف هذا التقرير؟ سيتم حذف الملفات المرتبطة به أيضاً.')) return;
     
     try {
@@ -198,7 +199,7 @@ export default function PublishedReports() {
     }
   };
 
-  const handleStatusChange = async (id: string, newStatus: string) => {
+  const handleStatusChange = async (id: string | number, newStatus: string) => {
     try {
       const { error } = await supabase
         .from('reports')

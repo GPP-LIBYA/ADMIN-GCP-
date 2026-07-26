@@ -14,7 +14,7 @@ export default function AnalysisPage() {
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<Analysis | null>(null);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | number | null>(null);
   const [form, setForm] = useState({ title: '', content: '', asset_symbol: '', author: '', is_published: true });
   const [saving, setSaving] = useState(false);
 
@@ -113,7 +113,7 @@ export default function AnalysisPage() {
     }
   };
 
-  const deleteAnalysis = async (id: string, title: string) => {
+  const deleteAnalysis = async (id: string | number, title: string) => {
     if (!checkPermission()) return;
     
     if (deletingId !== id) {

@@ -7,11 +7,6 @@ const key = process.env.VITE_SUPABASE_ANON_KEY;
 async function check() {
   const res = await fetch(`${url}/rest/v1/?apikey=${key}`);
   const data = await res.json();
-  const analyses = data.definitions.analyses;
-  if (analyses) {
-      console.log('analyses columns:', analyses.properties);
-  } else {
-      console.log('No analyses definition found');
-  }
+  console.log(data.definitions.analyses.properties);
 }
 check();
