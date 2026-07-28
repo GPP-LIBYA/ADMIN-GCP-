@@ -1,3 +1,4 @@
+import { archiveCommodityPrices } from '../utils/historyHelper';
 import React, { useState, useEffect, FormEvent, useRef, ChangeEvent } from 'react';
 import { supabase } from '../lib/supabase';
 import type { Commodity, CommodityCatalog, UnitsCatalog, SectorCatalog } from '../types';
@@ -435,7 +436,10 @@ export default function Prices() {
           updated_at: now
         };
         
-        const { error } = await supabase.from('commodities').upsert([payload], { onConflict: 'symbol' });
+        const { data, error } = await supabase.from('commodities').upsert([payload], { onConflict: 'symbol' }).select().single();
+        if (!error && data) {
+           await archiveCommodityPrices(supabase, [data]);
+        }
         
         if (error) {
           failedCount++;
@@ -515,10 +519,14 @@ export default function Prices() {
             updated_at: new Date().toISOString()
           };
           
-          const { error: err } = await supabase
+          const { data: updatedItem, error: err } = await supabase
             .from('commodities')
             .update(updateData)
-            .eq('id', editingItem.id);
+            .eq('id', editingItem.id).select().single();
+            
+          if (!err && updatedItem) {
+             await archiveCommodityPrices(supabase, [updatedItem]);
+          }
             
           if (err) throw err;
           
@@ -546,7 +554,7 @@ export default function Prices() {
             const changePercent = oldPrice !== 0 ? Number(((changeValue / oldPrice) * 100).toFixed(2)) : 0;
             const trend = newPrice > oldPrice ? 'up' : newPrice < oldPrice ? 'down' : 'neutral';
 
-            const { error: err } = await supabase
+            const { data: updatedItem, error: err } = await supabase
               .from('commodities')
               .update({
                 previous_price: oldPrice,
@@ -562,7 +570,11 @@ export default function Prices() {
                 updated_by: adminUser?.email || null,
                 updated_at: new Date().toISOString()
               })
-              .eq('symbol', symbol);
+              .eq('symbol', symbol).select().single();
+              
+          if (!err && updatedItem) {
+             await archiveCommodityPrices(supabase, [updatedItem]);
+          }
               
             if (err) {
               console.error(err);
@@ -575,7 +587,7 @@ export default function Prices() {
           } else {
             const newPrice = Number(form.price);
 
-            const { error: err } = await supabase.from('commodities').insert({
+            const { data: insertedItem, error: err } = await supabase.from('commodities').insert({
               symbol,
               name_ar: form.name_ar,
               name_en: form.name_en,
@@ -592,7 +604,10 @@ export default function Prices() {
               last_update_method: 'admin',
               updated_by: adminUser?.email || null,
               updated_at: new Date().toISOString()
-            });
+            }).select().single();
+          if (!err && insertedItem) {
+             await archiveCommodityPrices(supabase, [insertedItem]);
+          }
 
             if (err) {
               console.error(err);
@@ -847,9 +862,13 @@ export default function Prices() {
       }
 
       if (rowsToUpsert.length > 0) {
-        const { error: upsertErr } = await supabase
+        const { data: upsertedRows, error: upsertErr } = await supabase
           .from('commodities')
-          .upsert(rowsToUpsert, { onConflict: 'symbol' });
+          .upsert(rowsToUpsert, { onConflict: 'symbol' }).select();
+          
+        if (!upsertErr && upsertedRows) {
+           await archiveCommodityPrices(supabase, upsertedRows);
+        }
           
         if (upsertErr) throw upsertErr;
       }

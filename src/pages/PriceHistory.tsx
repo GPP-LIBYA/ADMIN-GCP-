@@ -66,7 +66,7 @@ export default function PriceHistory() {
   const fetchCatalogs = async () => {
     const [sectorsRes, catalogRes] = await Promise.all([
       supabase.from('sectors_catalog').select('*').order('sort_order', { ascending: true }),
-      supabase.from('commodity_catalog').select('*').eq('is_active', true)
+      supabase.from('commodities').select('*')
     ]);
     if (sectorsRes.data) setSectors(sectorsRes.data);
     if (catalogRes.data) setCatalog(catalogRes.data);
