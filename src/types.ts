@@ -35,7 +35,9 @@ export interface Commodity {
   unit: string | null;
   source: string | null;
   last_update_method?: string | null;
+  created_by?: string | null;
   updated_by?: string | null;
+  created_at?: string;
   updated_at: string;
 }
 
@@ -119,10 +121,18 @@ export interface Message {
 
 export interface SiteVisit {
   id: string;
-  path: string;
-  ip_address: string | null;
+  created_at: string;
+  visitor_ip: string | null;
+  device_type: string | null;
+  browser_name: string | null;
+  operating_system: string | null;
+  screen_width: number | null;
+  screen_height: number | null;
+  language: string | null;
+  page_path: string;
+  referrer: string | null;
+  session_id: string | null;
   user_agent: string | null;
-  visited_at: string;
 }
 
 export interface PlatformSettings {
@@ -173,3 +183,28 @@ export interface UnitsCatalog {
   created_at: string;
   updated_at: string;
 }
+
+export interface CommodityPriceHistory {
+  id: string;
+  symbol: string;
+  name_ar?: string;
+  name_en?: string;
+  sector?: string;
+  price: number;
+  previous_price?: number | null;
+  change_value?: number | null;
+  change_percent?: number | null;
+  trend?: 'up' | 'down' | 'neutral';
+  high?: number | null;
+  low?: number | null;
+  unit?: string | null;
+  source?: string | null;
+  recorded_at: string;
+  update_method?: string | null;
+  admin_email?: string | null;
+  created_by?: string | null;
+  updated_by?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+

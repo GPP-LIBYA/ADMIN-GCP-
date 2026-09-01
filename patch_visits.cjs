@@ -1,4 +1,6 @@
-import { useState, useEffect } from 'react';
+const fs = require('fs');
+
+const content = `import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import type { SiteVisit } from '../types';
 import { Activity, Monitor, Smartphone, Tablet, Globe, HardDrive } from 'lucide-react';
@@ -162,9 +164,6 @@ export default function Visits() {
                 <th className="px-4 py-3 font-medium">الجهاز</th>
                 <th className="px-4 py-3 font-medium">المتصفح</th>
                 <th className="px-4 py-3 font-medium">النظام</th>
-                <th className="px-4 py-3 font-medium">الشاشة</th>
-                <th className="px-4 py-3 font-medium">اللغة</th>
-                <th className="px-4 py-3 font-medium">المصدر</th>
                 <th className="px-4 py-3 font-medium">الوقـت</th>
               </tr>
             </thead>
@@ -178,9 +177,6 @@ export default function Visits() {
                   <td className="px-4 py-3 text-xs text-slate-500 dark:text-slate-400">{v.device_type || '-'}</td>
                   <td className="px-4 py-3 text-xs text-slate-500 dark:text-slate-400">{v.browser_name || '-'}</td>
                   <td className="px-4 py-3 text-xs text-slate-500 dark:text-slate-400">{v.operating_system || '-'}</td>
-                  <td className="px-4 py-3 text-xs text-slate-500 dark:text-slate-400" dir="ltr">{v.screen_width && v.screen_height ? `${v.screen_width}x${v.screen_height}` : '-'}</td>
-                  <td className="px-4 py-3 text-xs text-slate-500 dark:text-slate-400" dir="ltr">{v.language || '-'}</td>
-                  <td className="px-4 py-3 text-xs text-slate-500 dark:text-slate-400" dir="ltr">{v.referrer || '-'}</td>
                   <td className="px-4 py-3 text-xs text-slate-500 dark:text-slate-400">
                     {formatAdminDateTime(v.created_at || v.visited_at)}
                   </td>
@@ -188,7 +184,7 @@ export default function Visits() {
               ))}
               {visits.length === 0 && (
                 <tr>
-                  <td colSpan={10} className="px-4 py-8 text-center text-slate-500">
+                  <td colSpan={6} className="px-4 py-8 text-center text-slate-500">
                     لا توجد بيانات (يرجى تنفيذ ملف Migration)
                   </td>
                 </tr>
@@ -200,3 +196,6 @@ export default function Visits() {
     </div>
   );
 }
+`;
+
+fs.writeFileSync('src/pages/Visits.tsx', content);

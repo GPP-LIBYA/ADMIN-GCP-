@@ -1257,8 +1257,8 @@ const Reports: React.FC = () => {
               </div>
               
               <div className="flex flex-col items-center text-center mt-12">
-                <h1 className="text-4xl font-extrabold text-[#1e3a8a] mb-2">منصة الأسعار العالمية (GCP)</h1>
-                <h2 className="text-2xl text-slate-600 mb-16 font-semibold">Global Prices Platform (GCP)</h2>
+                <h1 className="text-4xl font-extrabold text-[#1e3a8a] mb-2">منصة الأسعار العالمية (GPP)</h1>
+                <h2 className="text-2xl text-slate-600 mb-16 font-semibold">Global Pricing Platform (GPP)</h2>
                 
                 <div className="inline-block border-y-4 border-[#b45309] py-8 px-16 mb-16 bg-slate-50/50 min-w-[60%]">
                   <h3 className="text-4xl font-bold text-[#b45309] mb-8">{reportTitle}</h3>
@@ -1295,7 +1295,7 @@ const Reports: React.FC = () => {
               <div className="mt-auto absolute bottom-12 left-12 right-12 border-t-2 border-slate-200 pt-6 flex justify-between items-center text-xs text-slate-500 font-medium z-10 bg-white">
                 <div className="flex flex-col">
                   <span className="font-bold text-slate-800 text-sm">© Libya Trade Network</span>
-                  <span className="text-slate-600">Global Prices Platform (GCP)</span>
+                  <span className="text-slate-600">Global Pricing Platform (GPP)</span>
                 </div>
                 <div className="text-left font-bold text-slate-600" dir="ltr">Page 1 of {totalPagesCount}</div>
               </div>
@@ -1311,7 +1311,7 @@ const Reports: React.FC = () => {
                 
                 <div className="flex justify-between items-center border-b-2 border-slate-200 pb-4 mb-8 relative z-10">
                   <div>
-                    <h4 className="font-bold text-slate-800 text-lg">منصة الأسعار العالمية (GCP)</h4>
+                    <h4 className="font-bold text-slate-800 text-lg">منصة الأسعار العالمية (GPP)</h4>
                     <h5 className="text-sm text-slate-500 font-medium">{reportTitle}</h5>
                   </div>
                   <div className="text-sm text-slate-500 font-medium font-mono" dir="ltr">
@@ -1323,7 +1323,7 @@ const Reports: React.FC = () => {
                   <div className="mb-10">
                     <h4 className="text-lg font-bold text-[#1e3a8a] mb-4 border-r-4 border-[#b45309] pr-3 bg-slate-50 py-2">الملخص التنفيذي التلقائي</h4>
                     <div className="bg-slate-50 p-6 border border-slate-200 rounded-lg shadow-sm text-slate-700 leading-loose text-justify text-lg">
-                      خلال الفترة المحددة سجلت سلعة <span className="font-bold text-[#1e3a8a]">{detailedStats.commodity.name_ar}</span> تغيرًا بنسبة <span className="font-bold font-mono" dir="ltr">{detailedStats.periodChangePercent}%</span> حيث بدأ السعر عند <span className="font-bold font-mono" dir="ltr">{Number(detailedStats.firstPrice).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span> ووصل إلى <span className="font-bold font-mono" dir="ltr">{Number(detailedStats.lastPrice).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>. بلغ أعلى سعر خلال الفترة <span className="font-bold text-green-700 font-mono" dir="ltr">{Number(detailedStats.high).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span> بينما بلغ أقل سعر <span className="font-bold text-red-700 font-mono" dir="ltr">{Number(detailedStats.low).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>. يعتمد التقرير على بيانات الأرشيف المسجلة في منصة الأسعار العالمية.
+                      خلال الفترة المحددة سجلت سلعة <span className="font-bold text-[#1e3a8a]">{detailedStats.commodity.name_ar}</span> تغيرًا بنسبة <span className="font-bold font-mono" dir="ltr">{detailedStats.periodChangePercent}%</span> حيث بدأ السعر عند <span className="font-bold font-mono" dir="ltr">{Number(detailedStats.firstPrice).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span> ووصل إلى <span className="font-bold font-mono" dir="ltr">{Number(detailedStats.lastPrice).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>. بلغ أعلى سعر خلال الفترة <span className="font-bold text-green-700 font-mono" dir="ltr">{Number(detailedStats.high).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span> بينما بلغ أقل سعر <span className="font-bold text-red-700 font-mono" dir="ltr">{Number(detailedStats.low).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>. يعتمد التقرير على بيانات الأرشيف المسجلة في منصة الأسعار العالمية GPP.
                     </div>
                   </div>
 
@@ -1371,7 +1371,7 @@ const Reports: React.FC = () => {
                 <div className="absolute bottom-12 left-12 right-12 border-t-2 border-slate-200 pt-6 flex justify-between items-center text-xs text-slate-500 font-medium z-10 bg-white">
                   <div className="flex flex-col">
                     <span className="font-bold text-slate-800 text-sm">© Libya Trade Network</span>
-                    <span className="text-slate-600">Global Prices Platform (GCP)</span>
+                    <span className="text-slate-600">Global Pricing Platform (GPP)</span>
                   </div>
                   <div className="text-left font-bold text-slate-600" dir="ltr">Page {currentPageNum} of {totalPagesCount}</div>
                 </div>
@@ -1383,7 +1383,7 @@ const Reports: React.FC = () => {
                 
                 <div className="flex justify-between items-center border-b-2 border-slate-200 pb-4 mb-8 relative z-10">
                   <div>
-                    <h4 className="font-bold text-slate-800 text-lg">منصة الأسعار العالمية (GCP)</h4>
+                    <h4 className="font-bold text-slate-800 text-lg">منصة الأسعار العالمية (GPP)</h4>
                     <h5 className="text-sm text-slate-500 font-medium">{reportTitle}</h5>
                   </div>
                   <div className="text-sm text-slate-500 font-medium font-mono" dir="ltr">
@@ -1442,7 +1442,7 @@ const Reports: React.FC = () => {
                 <div className="absolute bottom-12 left-12 right-12 border-t-2 border-slate-200 pt-6 flex justify-between items-center text-xs text-slate-500 font-medium z-10 bg-white">
                   <div className="flex flex-col">
                     <span className="font-bold text-slate-800 text-sm">© Libya Trade Network</span>
-                    <span className="text-slate-600">Global Prices Platform (GCP)</span>
+                    <span className="text-slate-600">Global Pricing Platform (GPP)</span>
                   </div>
                   <div className="text-left font-bold text-slate-600" dir="ltr">Page {currentPageNum} of {totalPagesCount}</div>
                 </div>
@@ -1455,7 +1455,7 @@ const Reports: React.FC = () => {
                   
                   <div className="flex justify-between items-center border-b-2 border-slate-200 pb-4 mb-8 relative z-10">
                   <div>
-                    <h4 className="font-bold text-slate-800 text-lg">منصة الأسعار العالمية (GCP)</h4>
+                    <h4 className="font-bold text-slate-800 text-lg">منصة الأسعار العالمية (GPP)</h4>
                     <h5 className="text-sm text-slate-500 font-medium">{reportTitle}</h5>
                   </div>
                   <div className="text-sm text-slate-500 font-medium font-mono" dir="ltr">
@@ -1533,7 +1533,7 @@ const Reports: React.FC = () => {
                   <div className="absolute bottom-12 left-12 right-12 border-t-2 border-slate-200 pt-6 flex justify-between items-center text-xs text-slate-500 font-medium z-10 bg-white">
                   <div className="flex flex-col">
                     <span className="font-bold text-slate-800 text-sm">© Libya Trade Network</span>
-                    <span className="text-slate-600">Global Prices Platform (GCP)</span>
+                    <span className="text-slate-600">Global Pricing Platform (GPP)</span>
                   </div>
                   <div className="text-left font-bold text-slate-600" dir="ltr">Page {currentPageNum} of {totalPagesCount}</div>
                 </div>
@@ -1549,7 +1549,7 @@ const Reports: React.FC = () => {
                 
                 <div className="flex justify-between items-center border-b-2 border-slate-200 pb-4 mb-8 relative z-10">
                   <div>
-                    <h4 className="font-bold text-slate-800 text-lg">منصة الأسعار العالمية (GCP)</h4>
+                    <h4 className="font-bold text-slate-800 text-lg">منصة الأسعار العالمية (GPP)</h4>
                     <h5 className="text-sm text-slate-500 font-medium">{reportTitle}</h5>
                   </div>
                   <div className="text-sm text-slate-500 font-medium font-mono" dir="ltr">
@@ -1609,7 +1609,7 @@ const Reports: React.FC = () => {
                 <div className="absolute bottom-12 left-12 right-12 border-t-2 border-slate-200 pt-6 flex justify-between items-center text-xs text-slate-500 font-medium z-10 bg-white">
                   <div className="flex flex-col">
                     <span className="font-bold text-slate-800 text-sm">© Libya Trade Network</span>
-                    <span className="text-slate-600">Global Prices Platform (GCP)</span>
+                    <span className="text-slate-600">Global Pricing Platform (GPP)</span>
                   </div>
                   <div className="text-left font-bold text-slate-600" dir="ltr">Page {currentPageNum} of {totalPagesCount}</div>
                 </div>
@@ -1622,7 +1622,7 @@ const Reports: React.FC = () => {
                   
                   <div className="flex justify-between items-center border-b-2 border-slate-200 pb-4 mb-8 relative z-10">
                   <div>
-                    <h4 className="font-bold text-slate-800 text-lg">منصة الأسعار العالمية (GCP)</h4>
+                    <h4 className="font-bold text-slate-800 text-lg">منصة الأسعار العالمية (GPP)</h4>
                     <h5 className="text-sm text-slate-500 font-medium">{reportTitle}</h5>
                   </div>
                   <div className="text-sm text-slate-500 font-medium font-mono" dir="ltr">
@@ -1684,7 +1684,7 @@ const Reports: React.FC = () => {
                   <div className="absolute bottom-12 left-12 right-12 border-t-2 border-slate-200 pt-6 flex justify-between items-center text-xs text-slate-500 font-medium z-10 bg-white">
                   <div className="flex flex-col">
                     <span className="font-bold text-slate-800 text-sm">© Libya Trade Network</span>
-                    <span className="text-slate-600">Global Prices Platform (GCP)</span>
+                    <span className="text-slate-600">Global Pricing Platform (GPP)</span>
                   </div>
                   <div className="text-left font-bold text-slate-600" dir="ltr">Page {currentPageNum} of {totalPagesCount}</div>
                 </div>
@@ -1698,7 +1698,7 @@ const Reports: React.FC = () => {
                   
                   <div className="flex justify-between items-center border-b-2 border-slate-200 pb-4 mb-8 relative z-10">
                   <div>
-                    <h4 className="font-bold text-slate-800 text-lg">منصة الأسعار العالمية (GCP)</h4>
+                    <h4 className="font-bold text-slate-800 text-lg">منصة الأسعار العالمية (GPP)</h4>
                     <h5 className="text-sm text-slate-500 font-medium">{reportTitle}</h5>
                   </div>
                   <div className="text-sm text-slate-500 font-medium font-mono" dir="ltr">
@@ -2017,7 +2017,7 @@ const Reports: React.FC = () => {
                   <div className="absolute bottom-12 left-12 right-12 border-t-2 border-slate-200 pt-6 flex justify-between items-center text-xs text-slate-500 font-medium z-10 bg-white">
                   <div className="flex flex-col">
                     <span className="font-bold text-slate-800 text-sm">© Libya Trade Network</span>
-                    <span className="text-slate-600">Global Prices Platform (GCP)</span>
+                    <span className="text-slate-600">Global Pricing Platform (GPP)</span>
                   </div>
                   <div className="text-left font-bold text-slate-600" dir="ltr">Page {currentPageNum} of {totalPagesCount}</div>
                 </div>
@@ -2031,7 +2031,7 @@ const Reports: React.FC = () => {
                   
                   <div className="flex justify-between items-center border-b-2 border-slate-200 pb-4 mb-8 relative z-10">
                   <div>
-                    <h4 className="font-bold text-slate-800 text-lg">منصة الأسعار العالمية (GCP)</h4>
+                    <h4 className="font-bold text-slate-800 text-lg">منصة الأسعار العالمية (GPP)</h4>
                     <h5 className="text-sm text-slate-500 font-medium">{reportTitle}</h5>
                   </div>
                   <div className="text-sm text-slate-500 font-medium font-mono" dir="ltr">
@@ -2105,7 +2105,7 @@ const Reports: React.FC = () => {
                   <div className="absolute bottom-12 left-12 right-12 border-t-2 border-slate-200 pt-6 flex justify-between items-center text-xs text-slate-500 font-medium z-10 bg-white">
                   <div className="flex flex-col">
                     <span className="font-bold text-slate-800 text-sm">© Libya Trade Network</span>
-                    <span className="text-slate-600">Global Prices Platform (GCP)</span>
+                    <span className="text-slate-600">Global Pricing Platform (GPP)</span>
                   </div>
                   <div className="text-left font-bold text-slate-600" dir="ltr">Page {currentPageNum} of {totalPagesCount}</div>
                 </div>
@@ -2119,7 +2119,7 @@ const Reports: React.FC = () => {
                   
                   <div className="flex justify-between items-center border-b-2 border-slate-200 pb-4 mb-8 relative z-10">
                   <div>
-                    <h4 className="font-bold text-slate-800 text-lg">منصة الأسعار العالمية (GCP)</h4>
+                    <h4 className="font-bold text-slate-800 text-lg">منصة الأسعار العالمية (GPP)</h4>
                     <h5 className="text-sm text-slate-500 font-medium">{reportTitle}</h5>
                   </div>
                   <div className="text-sm text-slate-500 font-medium font-mono" dir="ltr">
@@ -2145,7 +2145,7 @@ const Reports: React.FC = () => {
                   <div className="absolute bottom-12 left-12 right-12 border-t-2 border-slate-200 pt-6 flex justify-between items-center text-xs text-slate-500 font-medium z-10 bg-white">
                   <div className="flex flex-col">
                     <span className="font-bold text-slate-800 text-sm">© Libya Trade Network</span>
-                    <span className="text-slate-600">Global Prices Platform (GCP)</span>
+                    <span className="text-slate-600">Global Pricing Platform (GPP)</span>
                   </div>
                   <div className="text-left font-bold text-slate-600" dir="ltr">Page {currentPageNum} of {totalPagesCount}</div>
                 </div>
@@ -2159,7 +2159,7 @@ const Reports: React.FC = () => {
                   
                   <div className="flex justify-between items-center border-b-2 border-slate-200 pb-4 mb-8 relative z-10">
                   <div>
-                    <h4 className="font-bold text-slate-800 text-lg">منصة الأسعار العالمية (GCP)</h4>
+                    <h4 className="font-bold text-slate-800 text-lg">منصة الأسعار العالمية (GPP)</h4>
                     <h5 className="text-sm text-slate-500 font-medium">{reportTitle}</h5>
                   </div>
                   <div className="text-sm text-slate-500 font-medium font-mono" dir="ltr">
@@ -2185,7 +2185,7 @@ const Reports: React.FC = () => {
                   <div className="absolute bottom-12 left-12 right-12 border-t-2 border-slate-200 pt-6 flex justify-between items-center text-xs text-slate-500 font-medium z-10 bg-white">
                   <div className="flex flex-col">
                     <span className="font-bold text-slate-800 text-sm">© Libya Trade Network</span>
-                    <span className="text-slate-600">Global Prices Platform (GCP)</span>
+                    <span className="text-slate-600">Global Pricing Platform (GPP)</span>
                   </div>
                   <div className="text-left font-bold text-slate-600" dir="ltr">Page {currentPageNum} of {totalPagesCount}</div>
                 </div>
@@ -2200,7 +2200,7 @@ const Reports: React.FC = () => {
               
               <div className="flex justify-between items-center border-b-2 border-slate-200 pb-4 mb-8 relative z-10">
                   <div>
-                    <h4 className="font-bold text-slate-800 text-lg">منصة الأسعار العالمية (GCP)</h4>
+                    <h4 className="font-bold text-slate-800 text-lg">منصة الأسعار العالمية (GPP)</h4>
                     <h5 className="text-sm text-slate-500 font-medium">{reportTitle}</h5>
                   </div>
                   <div className="text-sm text-slate-500 font-medium font-mono" dir="ltr">
@@ -2216,7 +2216,7 @@ const Reports: React.FC = () => {
               <div className="absolute bottom-12 left-12 right-12 border-t-2 border-slate-200 pt-6 flex justify-between items-center text-xs text-slate-500 font-medium z-10 bg-white">
                   <div className="flex flex-col">
                     <span className="font-bold text-slate-800 text-sm">© Libya Trade Network</span>
-                    <span className="text-slate-600">Global Prices Platform (GCP)</span>
+                    <span className="text-slate-600">Global Pricing Platform (GPP)</span>
                   </div>
                   <div className="text-left font-bold text-slate-600" dir="ltr">Page {currentPageNum} of {totalPagesCount}</div>
                 </div>

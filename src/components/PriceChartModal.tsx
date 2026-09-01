@@ -236,7 +236,7 @@ export default function PriceChartModal({ isOpen, onClose, commodity }: PriceCha
                 </div>
                 <div className="text-left" dir="ltr">
                   <p className="text-sm font-bold text-[#D4AF37]">Libya Trade Network</p>
-                  <p className="text-xs text-[#94A3B8]">Global Prices Platform</p>
+                  <p className="text-xs text-[#94A3B8]">Global Pricing Platform (GPP)</p>
                   <p className="text-xs text-[#64748B] mt-1">{getFormattedDate()}</p>
                 </div>
               </div>

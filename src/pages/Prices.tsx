@@ -10,11 +10,13 @@ import PriceChartModal from '../components/PriceChartModal';
 import { formatAdminDateTime } from '../utils/dateUtils';
 
 export default function Prices() {
-  const { adminUser } = useAuthStore();
+  const { adminUser, session } = useAuthStore();
+  const currentAdminId = adminUser?.id || session?.user?.id || null;
   const [commodities, setCommodities] = useState<Commodity[]>([]);
   const [catalogCommodities, setCatalogCommodities] = useState<CommodityCatalog[]>([]);
   const [catalogSectors, setCatalogSectors] = useState<SectorCatalog[]>([]);
   const [catalogUnits, setCatalogUnits] = useState<UnitsCatalog[]>([]);
+  const [adminUsersMap, setAdminUsersMap] = useState<Record<string, { full_name?: string; email: string }>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
@@ -101,11 +103,12 @@ export default function Prices() {
       const to = from + ITEMS_PER_PAGE - 1;
       query = query.range(from, to);
 
-      const [commsRes, catCommsRes, catUnitsRes, catSectorsRes] = await Promise.all([
+      const [commsRes, catCommsRes, catUnitsRes, catSectorsRes, adminsRes] = await Promise.all([
         query,
         supabase.from('commodity_catalog').select('*').eq('is_active', true),
         supabase.from('units_catalog').select('*').eq('is_active', true),
-        supabase.from('sectors_catalog').select('*').eq('is_active', true).order('sort_order', { ascending: true }).order('name_ar', { ascending: true })
+        supabase.from('sectors_catalog').select('*').eq('is_active', true).order('sort_order', { ascending: true }).order('name_ar', { ascending: true }),
+        supabase.from('admin_users').select('id, full_name, email')
       ]);
         
       if (commsRes.error) throw commsRes.error;
@@ -117,12 +120,32 @@ export default function Prices() {
       setCatalogCommodities(catCommsRes.data || []);
       setCatalogUnits(catUnitsRes.data || []);
       setCatalogSectors(catSectorsRes.data || []);
+
+      if (adminsRes.data) {
+        const map: Record<string, { full_name?: string; email: string }> = {};
+        adminsRes.data.forEach((u: any) => {
+          if (u.id) {
+            map[u.id] = { full_name: u.full_name, email: u.email };
+          }
+          if (u.email) {
+            map[u.email] = { full_name: u.full_name, email: u.email };
+          }
+        });
+        setAdminUsersMap(map);
+      }
     } catch (err: any) {
       console.error(err);
       setError('حدث خطأ في جلب بيانات الأسعار');
     } finally {
       setLoading(false);
     }
+  };
+
+  const getAdminDisplayName = (userId?: string | null) => {
+    if (!userId) return 'غير معروف';
+    const admin = adminUsersMap[userId];
+    if (!admin) return 'غير معروف';
+    return admin.full_name || admin.email || 'غير معروف';
   };
 
   const openAddModal = () => {
@@ -206,7 +229,7 @@ export default function Prices() {
          setCommodities(prev => prev.filter(c => !selectedSymbols.includes(c.symbol)));
          setSelectedSymbols([]);
       } else {
-         let updateData: any = { updated_at: now };
+         let updateData: any = { updated_at: now, updated_by: currentAdminId };
          if (action === 'hide') updateData.is_visible = false;
          if (action === 'show') updateData.is_visible = true;
          if (action === 'activate') updateData.status = 'active';
@@ -252,7 +275,9 @@ export default function Prices() {
           source: item.source,
           status: item.status,
           is_visible: item.is_visible,
-          updated_at: item.updated_at
+          created_by: getAdminDisplayName(item.created_by),
+          updated_by: getAdminDisplayName(item.updated_by),
+          updated_at: formatAdminDateTime(item.updated_at)
        }));
 
        const ws = XLSX.utils.json_to_sheet(exportData);
@@ -417,7 +442,13 @@ export default function Prices() {
         const change_percent = current_price !== 0 ? Number(((change_value / current_price) * 100).toFixed(2)) : 0;
         const trend = new_price > current_price ? 'up' : new_price < current_price ? 'down' : 'neutral';
         
-        const payload = {
+        const { data: existingRecord } = await supabase
+          .from('commodities')
+          .select('id, created_by')
+          .eq('symbol', item.symbol)
+          .maybeSingle();
+
+        const payload: any = {
           symbol: item.symbol,
           name_ar: item.name_ar,
           name_en: item.name_en,
@@ -432,9 +463,13 @@ export default function Prices() {
           status: item.status,
           is_visible: item.is_visible,
           last_update_method: 'manual_bulk',
-          updated_by: adminUser?.email || null,
+          updated_by: currentAdminId,
           updated_at: now
         };
+
+        if (!existingRecord) {
+          payload.created_by = currentAdminId;
+        }
         
         const { data, error } = await supabase.from('commodities').upsert([payload], { onConflict: 'symbol' }).select().single();
         if (!error && data) {
@@ -515,7 +550,7 @@ export default function Prices() {
             status: form.status,
             is_visible: form.is_visible,
             last_update_method: 'admin',
-            updated_by: adminUser?.email || null,
+            updated_by: currentAdminId,
             updated_at: new Date().toISOString()
           };
           
@@ -536,7 +571,7 @@ export default function Prices() {
           // Add mode
           const { data: existing, error: checkError } = await supabase
             .from('commodities')
-            .select('symbol, price')
+            .select('symbol, price, created_by')
             .eq('symbol', symbol)
             .maybeSingle();
 
@@ -567,7 +602,7 @@ export default function Prices() {
                 status: form.status,
                 is_visible: form.is_visible,
                 last_update_method: 'admin',
-                updated_by: adminUser?.email || null,
+                updated_by: currentAdminId,
                 updated_at: new Date().toISOString()
               })
               .eq('symbol', symbol).select().single();
@@ -602,7 +637,8 @@ export default function Prices() {
               status: form.status,
               is_visible: form.is_visible,
               last_update_method: 'admin',
-              updated_by: adminUser?.email || null,
+              created_by: currentAdminId,
+              updated_by: currentAdminId,
               updated_at: new Date().toISOString()
             }).select().single();
           if (!err && insertedItem) {
@@ -834,7 +870,7 @@ export default function Prices() {
              trend,
              source: row.source || existing.source || 'Manual CSV',
              last_update_method: 'csv',
-             updated_by: adminUser?.email || null,
+             updated_by: currentAdminId,
              updated_at: now
            });
            updatedCount++;
@@ -854,7 +890,8 @@ export default function Prices() {
              status: 'active',
              is_visible: true,
              last_update_method: 'csv',
-             updated_by: adminUser?.email || null,
+             created_by: currentAdminId,
+             updated_by: currentAdminId,
              updated_at: now
            });
            addedCount++;
@@ -1109,6 +1146,8 @@ export default function Prices() {
                      <th className="px-4 py-3">الاسم</th>
                      <th className="px-4 py-3">القطاع</th>
                      <th className="px-4 py-3">السعر الحالي</th>
+                     <th className="px-4 py-3">أُضيف بواسطة</th>
+                     <th className="px-4 py-3">آخر تعديل بواسطة</th>
                      <th className="px-4 py-3 text-center">تحديث</th>
                      <th className="px-4 py-3 text-center">الحالة</th>
                      <th className="px-4 py-3 text-center">الظهور</th>
@@ -1120,7 +1159,7 @@ export default function Prices() {
                        <tr key={item.id} className={`hover:bg-slate-50/50 dark:hover:bg-slate-800/30 ${selectedSymbols.includes(item.symbol) ? 'bg-primary-50/30 dark:bg-primary-900/30' : ''}`}>
                          <td className="px-4 py-3 text-center">
                            <input 
-                             type="checkbox"
+                             type="checkbox" 
                              className="rounded border-slate-300 dark:border-dark-border dark:border-dark-border text-primary-600 focus:ring-primary-500 w-4 h-4 cursor-pointer"
                              checked={selectedSymbols.includes(item.symbol)}
                              onChange={e => {
@@ -1142,7 +1181,25 @@ export default function Prices() {
                              {item.price}
                            </span>
                          </td>
-                         <td className="px-4 py-3 text-center text-slate-500 dark:text-slate-400 text-xs">
+                         <td className="px-4 py-3 whitespace-nowrap">
+                           <span className={`text-xs px-2 py-0.5 rounded-md ${
+                             item.created_by && adminUsersMap[item.created_by] 
+                               ? 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-medium' 
+                               : 'text-slate-400 dark:text-slate-500'
+                           }`}>
+                             {getAdminDisplayName(item.created_by)}
+                           </span>
+                         </td>
+                         <td className="px-4 py-3 whitespace-nowrap">
+                           <span className={`text-xs px-2 py-0.5 rounded-md ${
+                             item.updated_by && adminUsersMap[item.updated_by] 
+                               ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 font-medium' 
+                               : 'text-slate-400 dark:text-slate-500'
+                           }`}>
+                             {getAdminDisplayName(item.updated_by)}
+                           </span>
+                         </td>
+                         <td className="px-4 py-3 text-center text-slate-500 dark:text-slate-400 text-xs whitespace-nowrap">
                            {formatAdminDateTime(item.updated_at)}
                          </td>
                          <td className="px-4 py-3 text-center">
@@ -1376,6 +1433,29 @@ export default function Prices() {
                       <label htmlFor="add_visible" className="text-sm font-medium text-slate-700 dark:text-slate-300">تفعيل الظهور للزوار</label>
                     </div>
                   </div>
+
+                  {editingItem && (
+                    <div className="mt-4 p-3 bg-slate-50 dark:bg-dark-bg rounded-lg border dark:border-dark-border grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                      <div>
+                        <span className="text-slate-500 dark:text-slate-400 block mb-0.5">أُدخل لأول مرة بواسطة:</span>
+                        <span className="font-semibold text-slate-800 dark:text-slate-200">
+                          {getAdminDisplayName(editingItem.created_by)}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-slate-500 dark:text-slate-400 block mb-0.5">آخر تعديل بواسطة:</span>
+                        <span className="font-semibold text-slate-800 dark:text-slate-200">
+                          {getAdminDisplayName(editingItem.updated_by)}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-slate-500 dark:text-slate-400 block mb-0.5">تاريخ آخر تعديل:</span>
+                        <span className="font-mono text-slate-700 dark:text-slate-300" dir="ltr">
+                          {formatAdminDateTime(editingItem.updated_at)}
+                        </span>
+                      </div>
+                    </div>
+                  )}
                 </form>
               ) : (
                 <div className="space-y-6">

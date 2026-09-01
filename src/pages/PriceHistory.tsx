@@ -24,13 +24,17 @@ const CHART_COLORS = [
 ];
 
 export default function PriceHistory() {
-  const { adminUser } = useAuthStore();
+  const { adminUser, session } = useAuthStore();
+  const currentAdminId = adminUser?.id || session?.user?.id || null;
+  const [allLatestHistory, setAllLatestHistory] = useState<any[]>([]);
+  const [tableSearch, setTableSearch] = useState('');
   const [history, setHistory] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
   const [sectors, setSectors] = useState<SectorCatalog[]>([]);
   const [catalog, setCatalog] = useState<CommodityCatalog[]>([]);
+  const [adminUsersMap, setAdminUsersMap] = useState<Record<string, { full_name?: string; email: string }>>({});
   
   // Filters
   const [sectorFilter, setSectorFilter] = useState('all');
@@ -61,15 +65,68 @@ export default function PriceHistory() {
     if (hasAppliedFilter) {
       fetchHistory();
     }
-  }, [page, hasAppliedFilter]);
+  }, [hasAppliedFilter]);
+
+  // Update paginated slice and total pages when allLatestHistory, tableSearch, or page changes
+  useEffect(() => {
+    const filtered = allLatestHistory.filter(item => {
+      if (!tableSearch) return true;
+      const q = tableSearch.toLowerCase().trim();
+      const c = catalog.find(x => x.symbol === item.symbol);
+      return (
+        item.symbol.toLowerCase().includes(q) ||
+        (item.name_ar && item.name_ar.includes(q)) ||
+        (item.name_en && item.name_en.toLowerCase().includes(q)) ||
+        (c?.name_ar && c.name_ar.includes(q)) ||
+        (c?.name_en && c.name_en.toLowerCase().includes(q)) ||
+        (item.sector && item.sector.toLowerCase().includes(q))
+      );
+    });
+
+    const pages = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE));
+    setTotalPages(pages);
+
+    const safePage = Math.min(page, pages);
+    if (safePage !== page && pages > 0) {
+      setPage(safePage);
+    }
+
+    const from = (safePage - 1) * ITEMS_PER_PAGE;
+    const to = from + ITEMS_PER_PAGE;
+    setHistory(filtered.slice(from, to));
+  }, [allLatestHistory, tableSearch, page, catalog]);
 
   const fetchCatalogs = async () => {
-    const [sectorsRes, catalogRes] = await Promise.all([
+    const [sectorsRes, catalogRes, adminsRes] = await Promise.all([
       supabase.from('sectors_catalog').select('*').order('sort_order', { ascending: true }),
-      supabase.from('commodities').select('*')
+      supabase.from('commodities').select('*'),
+      supabase.from('admin_users').select('id, full_name, email')
     ]);
     if (sectorsRes.data) setSectors(sectorsRes.data);
     if (catalogRes.data) setCatalog(catalogRes.data);
+    if (adminsRes.data) {
+      const map: Record<string, { full_name?: string; email: string }> = {};
+      adminsRes.data.forEach((u: any) => {
+        if (u.id) {
+          map[u.id] = { full_name: u.full_name, email: u.email };
+        }
+        if (u.email) {
+          map[u.email] = { full_name: u.full_name, email: u.email };
+        }
+      });
+      setAdminUsersMap(map);
+    }
+  };
+
+  const getAdminDisplayName = (userId?: string | null, emailFallback?: string | null) => {
+    if (!userId && !emailFallback) return 'غير معروف';
+    if (userId && adminUsersMap[userId]) {
+      return adminUsersMap[userId].full_name || adminUsersMap[userId].email || 'غير معروف';
+    }
+    if (emailFallback && adminUsersMap[emailFallback]) {
+      return adminUsersMap[emailFallback].full_name || adminUsersMap[emailFallback].email || emailFallback;
+    }
+    return 'غير معروف';
   };
 
   const applyFilters = () => {
@@ -79,6 +136,7 @@ export default function PriceHistory() {
     }
     setPage(1);
     setHasAppliedFilter(true);
+    fetchHistory();
   };
 
   const showAllData = () => {
@@ -87,6 +145,7 @@ export default function PriceHistory() {
     setToDate('');
     setPage(1);
     setHasAppliedFilter(true);
+    fetchHistory(catalog.map(c => c.symbol), '', '');
   };
 
   const resetFilters = () => {
@@ -95,46 +154,102 @@ export default function PriceHistory() {
     setToDate('');
     setSectorFilter('all');
     setSearchCommodity('');
+    setTableSearch('');
     setHasAppliedFilter(false);
     setShowChart(false);
+    setAllLatestHistory([]);
     setHistory([]);
   };
 
-  const fetchHistory = async () => {
+  // Helper to extract calendar day string (YYYY-MM-DD) based on local timezone
+  const getDayKey = (dateVal: string | Date | null | undefined): string => {
+    if (!dateVal) return 'unknown';
+    const d = new Date(dateVal);
+    if (isNaN(d.getTime())) return 'unknown';
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  // Helper function to extract ONE record per commodity PER DAY (Latest price by timestamp for that day)
+  const extractLatestPerCommodityPerDay = (records: any[]): any[] => {
+    const latestMap = new Map<string, any>();
+    
+    for (const row of records) {
+      if (!row || !row.symbol) continue;
+      const sym = row.symbol.trim().toUpperCase();
+      const dayKey = getDayKey(row.recorded_at || row.created_at);
+      const bucketKey = `${sym}__${dayKey}`;
+      
+      if (!latestMap.has(bucketKey)) {
+        latestMap.set(bucketKey, row);
+      } else {
+        const existing = latestMap.get(bucketKey);
+        // Compare full recorded_at timestamp, using created_at as fallback
+        const existingTime = new Date(existing.recorded_at || existing.created_at || 0).getTime();
+        const rowTime = new Date(row.recorded_at || row.created_at || 0).getTime();
+        
+        if (rowTime > existingTime) {
+          latestMap.set(bucketKey, row);
+        } else if (rowTime === existingTime) {
+          // Tie breaker: compare created_at timestamp if recorded_at is identical
+          const existingCreated = new Date(existing.created_at || 0).getTime();
+          const rowCreated = new Date(row.created_at || 0).getTime();
+          if (rowCreated > existingCreated) {
+            latestMap.set(bucketKey, row);
+          } else if (rowCreated === existingCreated && row.id && existing.id) {
+            if (String(row.id) > String(existing.id)) {
+              latestMap.set(bucketKey, row);
+            }
+          }
+        }
+      }
+    }
+
+    // Sort by latest recorded_at descending so recent days appear on top
+    return Array.from(latestMap.values()).sort((a, b) => {
+      const timeA = new Date(a.recorded_at || a.created_at || 0).getTime();
+      const timeB = new Date(b.recorded_at || b.created_at || 0).getTime();
+      return timeB - timeA;
+    });
+  };
+
+  const fetchHistory = async (overrideSymbols?: string[], overrideFrom?: string, overrideTo?: string) => {
     try {
       setLoading(true);
       setError(null);
+
+      const targetSymbols = overrideSymbols !== undefined ? overrideSymbols : selectedSymbols;
+      const targetFrom = overrideFrom !== undefined ? overrideFrom : fromDate;
+      const targetTo = overrideTo !== undefined ? overrideTo : toDate;
       
-      let query = supabase.from('commodity_price_history').select('*', { count: 'exact' });
+      let query = supabase.from('commodity_price_history').select('*');
       
-      if (selectedSymbols.length > 0) {
-        query = query.in('symbol', selectedSymbols);
+      if (targetSymbols.length > 0) {
+        query = query.in('symbol', targetSymbols);
       }
       
-      if (fromDate) {
-        query = query.gte('recorded_at', new Date(fromDate).toISOString());
+      if (targetFrom) {
+        query = query.gte('recorded_at', new Date(targetFrom).toISOString());
       }
-      if (toDate) {
-        const to = new Date(toDate);
+      if (targetTo) {
+        const to = new Date(targetTo);
         to.setHours(23, 59, 59, 999);
         query = query.lte('recorded_at', to.toISOString());
       }
       
-      query = query.order('recorded_at', { ascending: false });
+      query = query
+        .order('recorded_at', { ascending: false })
+        .order('created_at', { ascending: false });
       
-      // Pagination
-      const from = (page - 1) * ITEMS_PER_PAGE;
-      const to = from + ITEMS_PER_PAGE - 1;
-      query = query.range(from, to);
-      
-      const { data, count, error: err } = await query;
+      const { data, error: err } = await query;
       
       if (err) throw err;
       
-      setHistory(data || []);
-      if (count !== null) {
-        setTotalPages(Math.ceil(count / ITEMS_PER_PAGE));
-      }
+      // Deduplicate: ONE ROW PER COMMODITY PER DAY (Latest price record by timestamp)
+      const latestList = extractLatestPerCommodityPerDay(data || []);
+      setAllLatestHistory(latestList);
     } catch (err: any) {
       console.error(err);
       setError('حدث خطأ في جلب الأرشيف');
@@ -176,6 +291,8 @@ export default function PriceHistory() {
         low: editingItem.low,
         source: editingItem.source,
         recorded_at: editingItem.recorded_at,
+        updated_by: currentAdminId,
+        updated_at: new Date().toISOString()
       };
 
       const { error } = await supabase.from('commodity_price_history').update(updateData).eq('id', editingItem.id);
@@ -240,10 +357,12 @@ export default function PriceHistory() {
       to.setHours(23, 59, 59, 999);
       query = query.lte('recorded_at', to.toISOString());
     }
-    query = query.order('recorded_at', { ascending: false });
+    query = query
+      .order('recorded_at', { ascending: false })
+      .order('created_at', { ascending: false });
     const { data, error } = await query;
     if (error) throw error;
-    return data || [];
+    return extractLatestPerCommodityPerDay(data || []);
   };
 
   const getMergedDataForExport = (data: any[]) => {
@@ -251,10 +370,10 @@ export default function PriceHistory() {
       const c = catalog.find(x => x.symbol === row.symbol);
       return {
         ...row,
-        name_ar: c?.name_ar || '',
-        name_en: c?.name_en || '',
-        sector: c?.sector || '',
-        unit: c?.unit || '',
+        name_ar: c?.name_ar || row.name_ar || '',
+        name_en: c?.name_en || row.name_en || '',
+        sector: c?.sector || row.sector || '',
+        unit: c?.unit || row.unit || '',
       };
     });
   };
@@ -270,7 +389,7 @@ export default function PriceHistory() {
       
       const merged = getMergedDataForExport(data);
       const rows = merged.map(r => ({
-        'التاريخ': formatAdminDateTime(r.recorded_at),
+        'التاريخ': formatAdminDateTime(r.recorded_at || r.created_at),
         'الرمز': r.symbol,
         'الاسم (عربي)': r.name_ar,
         'الاسم (إنجليزي)': r.name_en,
@@ -281,6 +400,8 @@ export default function PriceHistory() {
         'نسبة التغير %': r.change_percent,
         'أعلى سعر': r.high,
         'أقل سعر': r.low,
+        'أُدخل بواسطة': getAdminDisplayName(r.created_by),
+        'آخر تعديل بواسطة': getAdminDisplayName(r.updated_by, r.admin_email),
         'المصدر': r.source,
       }));
       
@@ -308,7 +429,7 @@ export default function PriceHistory() {
       
       const merged = getMergedDataForExport(data);
       const rows = merged.map(r => ({
-        Date: r.recorded_at,
+        Date: r.recorded_at || r.created_at,
         Symbol: r.symbol,
         NameAR: r.name_ar,
         Sector: r.sector,
@@ -318,6 +439,8 @@ export default function PriceHistory() {
         ChangePercent: r.change_percent,
         High: r.high,
         Low: r.low,
+        CreatedBy: getAdminDisplayName(r.created_by),
+        LastUpdatedBy: getAdminDisplayName(r.updated_by, r.admin_email),
         Source: r.source,
       }));
       
@@ -417,19 +540,19 @@ export default function PriceHistory() {
 
   // Prepare chart data
   const chartData = React.useMemo(() => {
-    if (history.length === 0 || selectedSymbols.length === 0) return [];
+    if (allLatestHistory.length === 0 || selectedSymbols.length === 0) return [];
     
     // Group history by date
-    const grouped = history.reduce((acc, curr) => {
+    const grouped = allLatestHistory.reduce((acc, curr) => {
       // Use date string as key to group same days
-      const dateKey = curr.recorded_at ? curr.recorded_at.split('T')[0] : curr.created_at.split('T')[0];
+      const dateKey = getDayKey(curr.recorded_at || curr.created_at);
       if (!acc[dateKey]) acc[dateKey] = { date: dateKey };
       acc[dateKey][curr.symbol] = curr.price;
       return acc;
     }, {} as Record<string, any>);
     
     return Object.values(grouped).sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
-  }, [history, selectedSymbols]);
+  }, [allLatestHistory, selectedSymbols]);
 
 
   return (
@@ -584,17 +707,55 @@ export default function PriceHistory() {
         </div>
       )}
 
-      {hasAppliedFilter && !loading && history.length > 0 && (
+      {hasAppliedFilter && !loading && (allLatestHistory.length > 0 || history.length > 0) && (
         <div className="space-y-6">
           
-          <div className="flex justify-end gap-2">
-            <button 
-              onClick={() => setShowChart(!showChart)}
-              className="flex items-center gap-2 px-4 py-2 border border-slate-300 dark:border-dark-border bg-white dark:bg-dark-card rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition font-medium text-sm text-slate-700 dark:text-slate-300 shadow-sm"
-            >
-               <BarChart2 size={18} />
-               {showChart ? 'إخفاء الرسم البياني' : 'عرض الرسم البياني للسلع المحددة'}
-            </button>
+          <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-4 bg-white dark:bg-dark-card p-4 rounded-xl border dark:border-dark-border shadow-sm">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-lg bg-primary-50 dark:bg-primary-900/30 flex items-center justify-center text-primary-600 dark:text-primary-400">
+                <CheckSquare size={18} />
+              </div>
+              <div>
+                <h4 className="font-bold text-slate-800 dark:text-white text-sm">
+                  سجلات الأرشيف اليومية ({allLatestHistory.length} سجل يومي)
+                </h4>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  يتم عرض آخر سعر مسجل لكل سلعة في كل يوم
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+              <div className="relative min-w-[220px]">
+                <Search size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="بحث سريع في النتائج..."
+                  value={tableSearch}
+                  onChange={(e) => {
+                    setTableSearch(e.target.value);
+                    setPage(1);
+                  }}
+                  className="w-full pl-3 pr-9 py-2 text-sm border dark:border-dark-border rounded-lg bg-slate-50 dark:bg-dark-bg text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-primary-500"
+                />
+                {tableSearch && (
+                  <button
+                    onClick={() => setTableSearch('')}
+                    className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+
+              <button 
+                onClick={() => setShowChart(!showChart)}
+                className="flex items-center justify-center gap-2 px-4 py-2 border border-slate-300 dark:border-dark-border bg-white dark:bg-dark-card rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition font-medium text-sm text-slate-700 dark:text-slate-300 shadow-sm"
+              >
+                <BarChart2 size={16} />
+                {showChart ? 'إخفاء الرسم البياني' : 'عرض الرسم البياني'}
+              </button>
+            </div>
           </div>
 
           {/* Chart Section */}
@@ -682,6 +843,8 @@ export default function PriceHistory() {
                     <th className="px-4 py-4 font-semibold text-left">% التغير</th>
                     <th className="px-4 py-4 font-semibold text-left">أعلى</th>
                     <th className="px-4 py-4 font-semibold text-left">أقل</th>
+                    <th className="px-4 py-4 font-semibold">أُدخل بواسطة</th>
+                    <th className="px-4 py-4 font-semibold">آخر تعديل بواسطة</th>
                     <th className="px-4 py-4 font-semibold">المصدر</th>
                     <th className="px-4 py-4 font-semibold text-center">الإجراءات</th>
                   </tr>
@@ -725,6 +888,24 @@ export default function PriceHistory() {
                         </td>
                         <td className="px-4 py-3 text-left font-mono text-slate-500">
                           {item.low || '-'}
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <span className={`text-xs px-2 py-0.5 rounded-md ${
+                            item.created_by && adminUsersMap[item.created_by] 
+                              ? 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-medium' 
+                              : 'text-slate-400 dark:text-slate-500'
+                          }`}>
+                            {getAdminDisplayName(item.created_by)}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <span className={`text-xs px-2 py-0.5 rounded-md ${
+                            (item.updated_by && adminUsersMap[item.updated_by]) || (item.admin_email && adminUsersMap[item.admin_email])
+                              ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 font-medium' 
+                              : 'text-slate-400 dark:text-slate-500'
+                          }`}>
+                            {getAdminDisplayName(item.updated_by, item.admin_email)}
+                          </span>
                         </td>
                         <td className="px-4 py-3 text-slate-500 dark:text-slate-400 text-xs">
                           {item.source || '-'}
@@ -853,6 +1034,36 @@ export default function PriceHistory() {
                   className="w-full border dark:border-dark-border rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-primary-500 outline-none dark:bg-dark-bg dark:text-white transition"
                 />
               </div>
+
+              {editingItem && (
+                <div className="p-3 bg-slate-50 dark:bg-dark-bg rounded-lg border dark:border-dark-border grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                  <div>
+                    <span className="text-slate-500 dark:text-slate-400 block mb-0.5">أُدخل بواسطة:</span>
+                    <span className="font-semibold text-slate-800 dark:text-slate-200">
+                      {getAdminDisplayName(editingItem.created_by)}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 dark:text-slate-400 block mb-0.5">آخر تعديل بواسطة:</span>
+                    <span className="font-semibold text-slate-800 dark:text-slate-200">
+                      {getAdminDisplayName(editingItem.updated_by, editingItem.admin_email)}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 dark:text-slate-400 block mb-0.5">تاريخ الإدخال:</span>
+                    <span className="font-mono text-slate-700 dark:text-slate-300" dir="ltr">
+                      {formatAdminDateTime(editingItem.created_at || editingItem.recorded_at)}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 dark:text-slate-400 block mb-0.5">تاريخ آخر تعديل:</span>
+                    <span className="font-mono text-slate-700 dark:text-slate-300" dir="ltr">
+                      {formatAdminDateTime(editingItem.updated_at || editingItem.recorded_at)}
+                    </span>
+                  </div>
+                </div>
+              )}
+
               <div className="pt-6 flex justify-end gap-3 border-t dark:border-dark-border">
                 <button 
                   type="button" 

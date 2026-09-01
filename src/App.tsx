@@ -6,6 +6,7 @@
 import { useEffect, ReactNode } from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useAuthStore } from './store/authStore';
+import { useVisitTracker } from './hooks/useVisitTracker';
 import { useThemeStore } from './store/themeStore';
 import Layout from './components/Layout';
 import Login from './pages/Login';
@@ -50,6 +51,7 @@ function ProtectedRoute({
 }
 
 export default function App() {
+  useVisitTracker();
   const { checkAuth } = useAuthStore();
   const { theme } = useThemeStore();
 

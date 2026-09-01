@@ -31,6 +31,8 @@ export const archiveCommodityPrices = async (supabase: SupabaseClient, commoditi
       recorded_at: c.updated_at || new Date().toISOString(),
       update_method: c.last_update_method || 'manual',
       admin_email: c.updated_by || null,
+      created_by: c.created_by || null,
+      updated_by: c.updated_by || null,
       updated_at: new Date().toISOString()
     };
 

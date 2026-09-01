@@ -1,0 +1,54 @@
+// قم بإضافة هذا الكود في المنصة العامة (مثلاً في App.tsx أو داخل useEffect الرئيسي)
+
+import { useEffect } from 'react';
+
+// دالة لإنشاء Session ID عشوائي
+const generateSessionId = () => {
+  return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+};
+
+export const useVisitTracker = () => {
+  useEffect(() => {
+    // التأكد من أن التتبع يحدث مرة واحدة فقط لكل جلسة
+    const sessionId = sessionStorage.getItem('gcp_session_id');
+    
+    if (!sessionId) {
+      const newSessionId = generateSessionId();
+      sessionStorage.setItem('gcp_session_id', newSessionId);
+      
+      const trackVisit = async () => {
+        try {
+          const payload = {
+            device_type: /Mobi|Android/i.test(navigator.userAgent) ? 'Mobile' : /Tablet|iPad/i.test(navigator.userAgent) ? 'Tablet' : 'Desktop',
+            browser_name: navigator.userAgent.includes('Chrome') ? 'Chrome' : navigator.userAgent.includes('Firefox') ? 'Firefox' : navigator.userAgent.includes('Safari') ? 'Safari' : 'Other',
+            operating_system: navigator.platform,
+            screen_width: window.screen.width,
+            screen_height: window.screen.height,
+            language: navigator.language,
+            page_path: window.location.pathname,
+            referrer: document.referrer,
+            session_id: newSessionId,
+            user_agent: navigator.userAgent
+          };
+
+          // استبدل SUPABASE_URL برابط مشروعك الفعلي
+          const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'YOUR_SUPABASE_URL';
+          const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || 'YOUR_ANON_KEY';
+          
+          await fetch(`${SUPABASE_URL}/functions/v1/track-visit`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+            },
+            body: JSON.stringify(payload)
+          });
+        } catch (error) {
+          console.warn('Failed to track visit:', error);
+        }
+      };
+
+      trackVisit();
+    }
+  }, []);
+};

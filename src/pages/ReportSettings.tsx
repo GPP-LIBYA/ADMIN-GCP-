@@ -259,8 +259,8 @@ const ReportSettings: React.FC = () => {
             {logos.report_logo_left ? <img src={logos.report_logo_left} alt="Left Logo" className="h-16 w-auto object-contain" /> : <div className="h-16 w-32 bg-slate-100 rounded"></div>}
           </div>
           <div className="text-center mt-8">
-            <h1 className="text-xl font-bold text-[#1e3a8a]">منصة الأسعار العالمية (GCP)</h1>
-            <h2 className="text-lg font-bold text-slate-600">Global Prices Platform (GCP)</h2>
+            <h1 className="text-xl font-bold text-[#1e3a8a]">منصة الأسعار العالمية (GPP)</h1>
+            <h2 className="text-lg font-bold text-slate-600">Global Pricing Platform (GPP)</h2>
             <h3 className="text-lg font-bold text-slate-800 mt-4">عنوان التقرير التجريبي</h3>
             <p className="text-sm text-slate-500 font-mono mt-2" dir="ltr">{new Date().toLocaleString('en-GB')}</p>
           </div>
