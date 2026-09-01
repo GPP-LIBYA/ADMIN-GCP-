@@ -292,10 +292,18 @@ export default function PriceHistory() {
         source: editingItem.source,
         recorded_at: editingItem.recorded_at,
         updated_by: currentAdminId,
+        admin_email: currentAdminId,
         updated_at: new Date().toISOString()
       };
 
-      const { error } = await supabase.from('commodity_price_history').update(updateData).eq('id', editingItem.id);
+      let { error } = await supabase.from('commodity_price_history').update(updateData).eq('id', editingItem.id);
+
+      if (error && (error.message.includes('updated_by') || error.message.includes('created_by'))) {
+        const fallbackData = { ...updateData };
+        delete fallbackData.updated_by;
+        const retryResult = await supabase.from('commodity_price_history').update(fallbackData).eq('id', editingItem.id);
+        error = retryResult.error;
+      }
 
       if (error) throw error;
       

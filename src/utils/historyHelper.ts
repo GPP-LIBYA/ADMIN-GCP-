@@ -6,15 +6,8 @@ export const archiveCommodityPrices = async (supabase: SupabaseClient, commoditi
   let allSuccess = true;
   let lastError = null;
 
-  // Insert sequentially to ensure partial success and log exactly as requested
   for (const c of commodities) {
-    const historyRecord = {
-      // We don't include commodity_id if the column doesn't exist in DB, but let's try to include it.
-      // Wait, if we include commodity_id and the column doesn't exist, Supabase will throw an error!
-      // The instruction says "يجب أن يحتوي سجل الأرشيف على الأقل على: commodity_id..."
-      // But we checked the columns and it's not there.
-      // Wait! I should just include commodity_id. If it fails, I'll remove it.
-      // Let's check again if commodity_id can be added to the database.
+    const historyRecord: any = {
       symbol: c.symbol,
       name_ar: c.name_ar,
       name_en: c.name_en,
@@ -30,13 +23,22 @@ export const archiveCommodityPrices = async (supabase: SupabaseClient, commoditi
       source: c.source || null,
       recorded_at: c.updated_at || new Date().toISOString(),
       update_method: c.last_update_method || 'manual',
-      admin_email: c.updated_by || null,
+      admin_email: c.updated_by || c.admin_email || null,
       created_by: c.created_by || null,
       updated_by: c.updated_by || null,
       updated_at: new Date().toISOString()
     };
 
-    const { error } = await supabase.from('commodity_price_history').insert(historyRecord);
+    let { error } = await supabase.from('commodity_price_history').insert(historyRecord);
+
+    // If database schema in Supabase does not have created_by or updated_by column on commodity_price_history
+    if (error && (error.message.includes('created_by') || error.message.includes('updated_by'))) {
+      const fallbackRecord = { ...historyRecord };
+      delete fallbackRecord.created_by;
+      delete fallbackRecord.updated_by;
+      const retryResult = await supabase.from('commodity_price_history').insert(fallbackRecord);
+      error = retryResult.error;
+    }
 
     if (error) {
       allSuccess = false;
@@ -53,3 +55,4 @@ export const archiveCommodityPrices = async (supabase: SupabaseClient, commoditi
 
   return { success: allSuccess, error: lastError };
 };
+

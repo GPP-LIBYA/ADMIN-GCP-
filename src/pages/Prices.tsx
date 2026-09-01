@@ -229,7 +229,7 @@ export default function Prices() {
          setCommodities(prev => prev.filter(c => !selectedSymbols.includes(c.symbol)));
          setSelectedSymbols([]);
       } else {
-         let updateData: any = { updated_at: now, updated_by: currentAdminId };
+         let updateData: any = { updated_at: now };
          if (action === 'hide') updateData.is_visible = false;
          if (action === 'show') updateData.is_visible = true;
          if (action === 'activate') updateData.status = 'active';
@@ -441,12 +441,6 @@ export default function Prices() {
         const change_value = new_price - current_price;
         const change_percent = current_price !== 0 ? Number(((change_value / current_price) * 100).toFixed(2)) : 0;
         const trend = new_price > current_price ? 'up' : new_price < current_price ? 'down' : 'neutral';
-        
-        const { data: existingRecord } = await supabase
-          .from('commodities')
-          .select('id, created_by')
-          .eq('symbol', item.symbol)
-          .maybeSingle();
 
         const payload: any = {
           symbol: item.symbol,
@@ -463,17 +457,16 @@ export default function Prices() {
           status: item.status,
           is_visible: item.is_visible,
           last_update_method: 'manual_bulk',
-          updated_by: currentAdminId,
           updated_at: now
         };
-
-        if (!existingRecord) {
-          payload.created_by = currentAdminId;
-        }
         
         const { data, error } = await supabase.from('commodities').upsert([payload], { onConflict: 'symbol' }).select().single();
         if (!error && data) {
-           await archiveCommodityPrices(supabase, [data]);
+           await archiveCommodityPrices(supabase, [{
+             ...data,
+             created_by: currentAdminId,
+             updated_by: currentAdminId,
+           }]);
         }
         
         if (error) {
@@ -550,7 +543,6 @@ export default function Prices() {
             status: form.status,
             is_visible: form.is_visible,
             last_update_method: 'admin',
-            updated_by: currentAdminId,
             updated_at: new Date().toISOString()
           };
           
@@ -560,7 +552,11 @@ export default function Prices() {
             .eq('id', editingItem.id).select().single();
             
           if (!err && updatedItem) {
-             await archiveCommodityPrices(supabase, [updatedItem]);
+             await archiveCommodityPrices(supabase, [{
+               ...updatedItem,
+               created_by: currentAdminId,
+               updated_by: currentAdminId,
+             }]);
           }
             
           if (err) throw err;
@@ -571,7 +567,7 @@ export default function Prices() {
           // Add mode
           const { data: existing, error: checkError } = await supabase
             .from('commodities')
-            .select('symbol, price, created_by')
+            .select('symbol, price')
             .eq('symbol', symbol)
             .maybeSingle();
 
@@ -602,13 +598,16 @@ export default function Prices() {
                 status: form.status,
                 is_visible: form.is_visible,
                 last_update_method: 'admin',
-                updated_by: currentAdminId,
                 updated_at: new Date().toISOString()
               })
               .eq('symbol', symbol).select().single();
               
           if (!err && updatedItem) {
-             await archiveCommodityPrices(supabase, [updatedItem]);
+             await archiveCommodityPrices(supabase, [{
+               ...updatedItem,
+               created_by: currentAdminId,
+               updated_by: currentAdminId,
+             }]);
           }
               
             if (err) {
@@ -637,12 +636,14 @@ export default function Prices() {
               status: form.status,
               is_visible: form.is_visible,
               last_update_method: 'admin',
-              created_by: currentAdminId,
-              updated_by: currentAdminId,
               updated_at: new Date().toISOString()
             }).select().single();
           if (!err && insertedItem) {
-             await archiveCommodityPrices(supabase, [insertedItem]);
+             await archiveCommodityPrices(supabase, [{
+               ...insertedItem,
+               created_by: currentAdminId,
+               updated_by: currentAdminId,
+             }]);
           }
 
             if (err) {
@@ -870,7 +871,6 @@ export default function Prices() {
              trend,
              source: row.source || existing.source || 'Manual CSV',
              last_update_method: 'csv',
-             updated_by: currentAdminId,
              updated_at: now
            });
            updatedCount++;
@@ -890,8 +890,6 @@ export default function Prices() {
              status: 'active',
              is_visible: true,
              last_update_method: 'csv',
-             created_by: currentAdminId,
-             updated_by: currentAdminId,
              updated_at: now
            });
            addedCount++;
@@ -904,7 +902,11 @@ export default function Prices() {
           .upsert(rowsToUpsert, { onConflict: 'symbol' }).select();
           
         if (!upsertErr && upsertedRows) {
-           await archiveCommodityPrices(supabase, upsertedRows);
+           await archiveCommodityPrices(supabase, upsertedRows.map(r => ({
+             ...r,
+             created_by: currentAdminId,
+             updated_by: currentAdminId,
+           })));
         }
           
         if (upsertErr) throw upsertErr;
