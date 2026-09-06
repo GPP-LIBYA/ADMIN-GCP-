@@ -30,15 +30,30 @@ export const useAuthStore = create<AuthState>((set) => ({
         return;
       }
       
-      // We have a session, let's verify admin data
+      // We have a session, let's verify admin data (prefer auth_user_id)
       const email = session.user.email;
       if (!email) throw new Error('No email found in session');
       
-      const { data: adminData, error: adminError } = await supabase
+      let adminData = null;
+      let adminError = null;
+
+      const { data: byAuthId } = await supabase
         .from('admin_users')
         .select('*')
-        .eq('email', email)
-        .single();
+        .eq('auth_user_id', session.user.id)
+        .maybeSingle();
+
+      if (byAuthId) {
+        adminData = byAuthId;
+      } else {
+        const { data: byEmail, error: errEmail } = await supabase
+          .from('admin_users')
+          .select('*')
+          .eq('email', email)
+          .maybeSingle();
+        adminData = byEmail;
+        adminError = errEmail;
+      }
         
       if (adminError || !adminData) {
         set({ 

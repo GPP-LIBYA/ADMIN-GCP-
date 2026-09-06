@@ -1,7 +1,8 @@
 export type AdminRole = 'super_admin' | 'Admin' | 'Editor' | 'Viewer' | string;
 
 export interface AdminUser {
-  id: string; // auth.uid()
+  id: number | string; // Primary key bigint
+  auth_user_id?: string; // Linked to auth.users.id UUID
   email: string;
   full_name?: string;
   role: AdminRole;

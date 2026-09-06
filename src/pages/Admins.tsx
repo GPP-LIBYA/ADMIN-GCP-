@@ -183,7 +183,11 @@ export default function Admins() {
 
       if (editingItem) {
         // Edit mode
-        if (editingItem.role === 'super_admin' && currentUser?.id !== editingItem.id) {
+        const isTargetSelf = currentUser?.auth_user_id && editingItem.auth_user_id
+          ? currentUser.auth_user_id === editingItem.auth_user_id
+          : (currentUser?.email?.toLowerCase() === editingItem.email?.toLowerCase() || currentUser?.id === editingItem.id);
+
+        if (editingItem.role === 'super_admin' && !isTargetSelf) {
           setFormError('لا يمكنك تعديل بيانات Super Admin آخر');
           return;
         }
@@ -260,7 +264,11 @@ export default function Admins() {
       return;
     }
 
-    if (item.id === currentUser?.id || item.email?.toLowerCase() === currentUser?.email?.toLowerCase()) {
+    const isSelf = currentUser?.auth_user_id && item.auth_user_id
+      ? currentUser.auth_user_id === item.auth_user_id
+      : (item.email?.toLowerCase() === currentUser?.email?.toLowerCase() || item.id === currentUser?.id);
+
+    if (isSelf) {
       alert('لا يمكنك تعطيل حسابك الخاص');
       return;
     }
@@ -315,7 +323,11 @@ export default function Admins() {
       return;
     }
 
-    if (item.id === currentUser?.id || item.email?.toLowerCase() === currentUser?.email?.toLowerCase()) {
+    const isSelf = currentUser?.auth_user_id && item.auth_user_id
+      ? currentUser.auth_user_id === item.auth_user_id
+      : (item.email?.toLowerCase() === currentUser?.email?.toLowerCase() || item.id === currentUser?.id);
+
+    if (isSelf) {
       alert('لا يمكنك حذف حسابك الخاص');
       return;
     }

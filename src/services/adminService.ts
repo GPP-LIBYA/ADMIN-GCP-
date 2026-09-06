@@ -35,10 +35,25 @@ export function translateAdminError(err: any): string {
   const details = typeof err === 'object' && err.details ? String(err.details) : '';
   const full = `${msg} ${details}`.toLowerCase();
 
-  // Log technical detail to console only for development
-  console.error('[AdminService Technical Error]:', err);
+  // Log diagnostic warning
+  console.warn('[AdminService Diagnostic]:', { message: msg, code: err?.code, status: err?.status });
 
-  if (full.includes('23505') || full.includes('duplicate key') || full.includes('already registered') || full.includes('مسجل بالفعل')) {
+  // If already in Arabic and clean, preserve it directly
+  if (/[\u0600-\u06FF]/.test(msg) && !msg.includes('PostgREST') && !msg.includes('SQL')) {
+    return msg;
+  }
+
+  if (
+    full.includes('failed to send a request') ||
+    full.includes('functionsfetcherror') ||
+    full.includes('not_found') ||
+    full.includes('not found') ||
+    full.includes('404')
+  ) {
+    return 'دالة السحابة (manage-admin-user) لم يتم نشرها على Supabase بعد أو تعذر الاتصال بها.';
+  }
+
+  if (full.includes('23505') || full.includes('duplicate key') || full.includes('already registered') || full.includes('already exists') || full.includes('email_exists')) {
     return 'هذا البريد الإلكتروني مسجل بالفعل كمستخدم إداري';
   }
   if (full.includes('403') || full.includes('forbidden') || full.includes('unauthorized') || full.includes('صلاحية')) {
@@ -54,12 +69,51 @@ export function translateAdminError(err: any): string {
     return 'انتهت مهلة الاتصال بالخادم، يرجى المحاولة لاحقاً';
   }
 
-  // If already in Arabic and clean, keep it
-  if (/[\u0600-\u06FF]/.test(msg) && !msg.includes('PostgREST') && !msg.includes('SQL')) {
-    return msg;
+  return msg || 'تعذر تنفيذ العملية الإدارية، يرجى المحاولة مرة أخرى';
+}
+
+/**
+ * Invokes the manage-admin-user Edge Function and parses error response bodies
+ */
+async function invokeEdgeFunction<T = any>(bodyPayload: any): Promise<AdminServiceResult<T>> {
+  const { data, error } = await supabase.functions.invoke('manage-admin-user', {
+    body: bodyPayload
+  });
+
+  if (error) {
+    let detailedMessage = error.message;
+    let errorCode = 'EDGE_FUNCTION_ERROR';
+    const statusCode = (error as any).status;
+
+    // Check if error has response context from Edge Function (FunctionsHttpError)
+    if ((error as any).context && typeof (error as any).context.json === 'function') {
+      try {
+        const errPayload = await (error as any).context.json();
+        console.warn('[AdminService] Edge Function Error Body:', errPayload);
+        if (errPayload) {
+          if (errPayload.message) detailedMessage = errPayload.message;
+          else if (errPayload.error) detailedMessage = errPayload.error;
+          if (errPayload.code) errorCode = errPayload.code;
+        }
+      } catch (_) {
+        // Response context stream may not be JSON
+      }
+    }
+
+    const customErr: any = new Error(detailedMessage);
+    customErr.code = errorCode;
+    customErr.status = statusCode;
+    customErr.originalError = error;
+    throw customErr;
   }
 
-  return 'تعذر تنفيذ العملية الإدارية، يرجى المحاولة مرة أخرى';
+  if (data && (data.error || data.success === false)) {
+    const customErr: any = new Error(data.message || data.error || 'فشلت العملية الإدارية');
+    if (data.code) customErr.code = data.code;
+    throw customErr;
+  }
+
+  return data as AdminServiceResult<T>;
 }
 
 /**
@@ -71,31 +125,10 @@ export const adminService = {
    */
   async createAdmin(params: CreateAdminParams): Promise<AdminServiceResult<AdminUser>> {
     try {
-      const { data, error } = await supabase.functions.invoke('manage-admin-user', {
-        body: {
-          action: 'create',
-          ...params
-        }
+      return await invokeEdgeFunction<AdminUser>({
+        action: 'create',
+        ...params
       });
-
-      if (error) {
-        // Try fallback to create-admin-user function
-        const fallback = await supabase.functions.invoke('create-admin-user', {
-          body: params
-        });
-
-        if (fallback.error) {
-          throw new Error(fallback.error.message || error.message);
-        }
-
-        return fallback.data as AdminServiceResult<AdminUser>;
-      }
-
-      if (data && data.error) {
-        throw new Error(data.error);
-      }
-
-      return data as AdminServiceResult<AdminUser>;
     } catch (err: any) {
       throw new Error(translateAdminError(err));
     }
@@ -106,17 +139,10 @@ export const adminService = {
    */
   async updateAdmin(params: UpdateAdminParams): Promise<AdminServiceResult<AdminUser>> {
     try {
-      const { data, error } = await supabase.functions.invoke('manage-admin-user', {
-        body: {
-          action: 'update',
-          ...params
-        }
+      return await invokeEdgeFunction<AdminUser>({
+        action: 'update',
+        ...params
       });
-
-      if (error) throw error;
-      if (data && data.error) throw new Error(data.error);
-
-      return data as AdminServiceResult<AdminUser>;
     } catch (err: any) {
       throw new Error(translateAdminError(err));
     }
@@ -127,17 +153,10 @@ export const adminService = {
    */
   async toggleActive(email: string): Promise<AdminServiceResult<{ is_active: boolean }>> {
     try {
-      const { data, error } = await supabase.functions.invoke('manage-admin-user', {
-        body: {
-          action: 'toggle_active',
-          email
-        }
+      return await invokeEdgeFunction<{ is_active: boolean }>({
+        action: 'toggle_active',
+        email
       });
-
-      if (error) throw error;
-      if (data && data.error) throw new Error(data.error);
-
-      return data as AdminServiceResult<{ is_active: boolean }>;
     } catch (err: any) {
       throw new Error(translateAdminError(err));
     }
@@ -148,17 +167,10 @@ export const adminService = {
    */
   async deleteAdmin(email: string): Promise<AdminServiceResult> {
     try {
-      const { data, error } = await supabase.functions.invoke('manage-admin-user', {
-        body: {
-          action: 'delete',
-          email
-        }
+      return await invokeEdgeFunction({
+        action: 'delete',
+        email
       });
-
-      if (error) throw error;
-      if (data && data.error) throw new Error(data.error);
-
-      return data as AdminServiceResult;
     } catch (err: any) {
       throw new Error(translateAdminError(err));
     }
@@ -169,17 +181,10 @@ export const adminService = {
    */
   async resetPassword(email: string): Promise<AdminServiceResult> {
     try {
-      const { data, error } = await supabase.functions.invoke('manage-admin-user', {
-        body: {
-          action: 'reset_password',
-          email
-        }
+      return await invokeEdgeFunction({
+        action: 'reset_password',
+        email
       });
-
-      if (error) throw error;
-      if (data && data.error) throw new Error(data.error);
-
-      return data as AdminServiceResult;
     } catch (err: any) {
       throw new Error(translateAdminError(err));
     }
