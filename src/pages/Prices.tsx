@@ -7,7 +7,8 @@ import { Search, Edit2, Check, X, Filter, Plus, Upload, AlertCircle, FileText, T
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
 import PriceChartModal from '../components/PriceChartModal';
-import { formatAdminDateTime } from '../utils/dateUtils';
+import { formatAdminDateTime, getDayKey } from '../utils/dateUtils';
+import { calculateDailyHighLow, getExistingPricesForDay } from '../utils/priceHighLowHelper';
 
 export default function Prices() {
   const { adminUser, session } = useAuthStore();
@@ -17,6 +18,7 @@ export default function Prices() {
   const [catalogSectors, setCatalogSectors] = useState<SectorCatalog[]>([]);
   const [catalogUnits, setCatalogUnits] = useState<UnitsCatalog[]>([]);
   const [adminUsersMap, setAdminUsersMap] = useState<Record<string, { full_name?: string; email: string }>>({});
+  const [todayPricesMap, setTodayPricesMap] = useState<Map<string, number[]>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
@@ -133,12 +135,43 @@ export default function Prices() {
         });
         setAdminUsersMap(map);
       }
+
+      // Fetch today's prices map to accurately compute and display daily High and Low
+      const todayMap = await getExistingPricesForDay(supabase, [], new Date());
+      setTodayPricesMap(todayMap);
     } catch (err: any) {
       console.error(err);
       setError('حدث خطأ في جلب بيانات الأسعار');
     } finally {
       setLoading(false);
     }
+  };
+
+  const getTodayPriceStats = (item: Commodity) => {
+    const sym = (item.symbol || '').trim().toUpperCase();
+    const prices = todayPricesMap.get(sym);
+    if (prices && prices.length > 0) {
+      return {
+        high: Math.max(...prices),
+        low: Math.min(...prices),
+        hasTodayPrice: true
+      };
+    }
+    const isToday = getDayKey(item.updated_at) === getDayKey(new Date());
+    if (isToday) {
+      const h = typeof item.high === 'number' && !isNaN(item.high) ? item.high : item.price;
+      const l = typeof item.low === 'number' && !isNaN(item.low) ? item.low : item.price;
+      return {
+        high: Math.max(h, item.price),
+        low: Math.min(l, item.price),
+        hasTodayPrice: true
+      };
+    }
+    return {
+      high: null,
+      low: null,
+      hasTodayPrice: false
+    };
   };
 
   const getAdminDisplayName = (userId?: string | null) => {
@@ -433,6 +466,10 @@ export default function Prices() {
     const errors: string[] = [];
     const now = new Date().toISOString();
     
+    // Fetch today's price history for all items being updated
+    const symbolsToUpdate = itemsToUpdate.map(i => i.symbol);
+    const dayPricesMap = await getExistingPricesForDay(supabase, symbolsToUpdate, now);
+
     // We will do it sequentially to track exactly which ones failed without stopping others
     for (const item of itemsToUpdate) {
       try {
@@ -441,6 +478,12 @@ export default function Prices() {
         const change_value = new_price - current_price;
         const change_percent = current_price !== 0 ? Number(((change_value / current_price) * 100).toFixed(2)) : 0;
         const trend = new_price > current_price ? 'up' : new_price < current_price ? 'down' : 'neutral';
+
+        const sym = String(item.symbol).trim().toUpperCase();
+        const existingPrices = dayPricesMap.get(sym) || [];
+        const { high, low } = calculateDailyHighLow(existingPrices, new_price);
+        existingPrices.push(new_price);
+        dayPricesMap.set(sym, existingPrices);
 
         const payload: any = {
           symbol: item.symbol,
@@ -452,6 +495,8 @@ export default function Prices() {
           change_value: item.current_price > 0 ? change_value : 0,
           change_percent: item.current_price > 0 ? change_percent : 0,
           trend: item.current_price > 0 ? trend : 'neutral',
+          high,
+          low,
           unit: item.unit || null,
           source: item.source || null,
           status: item.status,
@@ -464,6 +509,8 @@ export default function Prices() {
         if (!error && data) {
            await archiveCommodityPrices(supabase, [{
              ...data,
+             high,
+             low,
              created_by: currentAdminId,
              updated_by: currentAdminId,
            }]);
@@ -529,6 +576,10 @@ export default function Prices() {
             trend = editingItem.trend;
           }
           
+          const existingMap = await getExistingPricesForDay(supabase, [editingItem.symbol], new Date());
+          const existingPrices = existingMap.get(editingItem.symbol.trim().toUpperCase()) || [];
+          const { high, low } = calculateDailyHighLow(existingPrices, newPrice);
+
           const updateData = {
             name_ar: form.name_ar,
             name_en: form.name_en,
@@ -540,6 +591,8 @@ export default function Prices() {
             change_value,
             change_percent,
             trend,
+            high,
+            low,
             status: form.status,
             is_visible: form.is_visible,
             last_update_method: 'admin',
@@ -554,6 +607,8 @@ export default function Prices() {
           if (!err && updatedItem) {
              await archiveCommodityPrices(supabase, [{
                ...updatedItem,
+               high,
+               low,
                created_by: currentAdminId,
                updated_by: currentAdminId,
              }]);
@@ -585,6 +640,10 @@ export default function Prices() {
             const changePercent = oldPrice !== 0 ? Number(((changeValue / oldPrice) * 100).toFixed(2)) : 0;
             const trend = newPrice > oldPrice ? 'up' : newPrice < oldPrice ? 'down' : 'neutral';
 
+            const existingMap = await getExistingPricesForDay(supabase, [symbol], new Date());
+            const existingPrices = existingMap.get(symbol.trim().toUpperCase()) || [];
+            const { high, low } = calculateDailyHighLow(existingPrices, newPrice);
+
             const { data: updatedItem, error: err } = await supabase
               .from('commodities')
               .update({
@@ -593,6 +652,8 @@ export default function Prices() {
                 change_value: changeValue,
                 change_percent: changePercent,
                 trend,
+                high,
+                low,
                 unit: form.unit || null,
                 source: form.source || null,
                 status: form.status,
@@ -605,6 +666,8 @@ export default function Prices() {
           if (!err && updatedItem) {
              await archiveCommodityPrices(supabase, [{
                ...updatedItem,
+               high,
+               low,
                created_by: currentAdminId,
                updated_by: currentAdminId,
              }]);
@@ -620,6 +683,9 @@ export default function Prices() {
             }
           } else {
             const newPrice = Number(form.price);
+            const existingMap = await getExistingPricesForDay(supabase, [symbol], new Date());
+            const existingPrices = existingMap.get(symbol.trim().toUpperCase()) || [];
+            const { high, low } = calculateDailyHighLow(existingPrices, newPrice);
 
             const { data: insertedItem, error: err } = await supabase.from('commodities').insert({
               symbol,
@@ -631,6 +697,8 @@ export default function Prices() {
               change_value: 0,
               change_percent: 0,
               trend: 'neutral',
+              high,
+              low,
               unit: form.unit || null,
               source: form.source || null,
               status: form.status,
@@ -641,6 +709,8 @@ export default function Prices() {
           if (!err && insertedItem) {
              await archiveCommodityPrices(supabase, [{
                ...insertedItem,
+               high,
+               low,
                created_by: currentAdminId,
                updated_by: currentAdminId,
              }]);
@@ -897,6 +967,19 @@ export default function Prices() {
       }
 
       if (rowsToUpsert.length > 0) {
+        const symbols = rowsToUpsert.map(r => r.symbol);
+        const dayPricesMap = await getExistingPricesForDay(supabase, symbols, now);
+
+        for (const r of rowsToUpsert) {
+          const sym = String(r.symbol).trim().toUpperCase();
+          const existingPrices = dayPricesMap.get(sym) || [];
+          const { high, low } = calculateDailyHighLow(existingPrices, r.price);
+          existingPrices.push(r.price);
+          dayPricesMap.set(sym, existingPrices);
+          r.high = high;
+          r.low = low;
+        }
+
         const { data: upsertedRows, error: upsertErr } = await supabase
           .from('commodities')
           .upsert(rowsToUpsert, { onConflict: 'symbol' }).select();
@@ -1147,7 +1230,10 @@ export default function Prices() {
                      <th className="px-4 py-3">الرمز</th>
                      <th className="px-4 py-3">الاسم</th>
                      <th className="px-4 py-3">القطاع</th>
-                     <th className="px-4 py-3">السعر الحالي</th>
+                     <th className="px-4 py-3 text-left">السعر الحالي</th>
+                     <th className="px-4 py-3 text-left">السعر السابق</th>
+                     <th className="px-4 py-3 text-left">أعلى اليوم</th>
+                     <th className="px-4 py-3 text-left">أدنى اليوم</th>
                      <th className="px-4 py-3">أُضيف بواسطة</th>
                      <th className="px-4 py-3">آخر تعديل بواسطة</th>
                      <th className="px-4 py-3 text-center">تحديث</th>
@@ -1178,11 +1264,27 @@ export default function Prices() {
                          <td className="px-4 py-3">
                            <span className="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 px-2.5 py-1 rounded-md text-xs">{item.sector}</span>
                          </td>
-                         <td className="px-4 py-3 font-mono font-medium" dir="ltr">
-                           <span className={item.trend === 'up' ? 'text-green-600' : item.trend === 'down' ? 'text-red-600' : ''}>
-                             {item.price}
-                           </span>
-                         </td>
+                         {(() => {
+                           const stats = getTodayPriceStats(item);
+                           return (
+                             <>
+                               <td className="px-4 py-3 font-mono font-medium text-left" dir="ltr">
+                                 <span className={item.trend === 'up' ? 'text-green-600 dark:text-green-400 font-bold' : item.trend === 'down' ? 'text-red-600 dark:text-red-400 font-bold' : 'text-slate-900 dark:text-white font-bold'}>
+                                   {item.price}
+                                 </span>
+                               </td>
+                               <td className="px-4 py-3 font-mono text-slate-500 dark:text-slate-400 text-left text-xs" dir="ltr">
+                                 {item.previous_price !== null && item.previous_price !== undefined ? item.previous_price : '—'}
+                               </td>
+                               <td className="px-4 py-3 font-mono text-emerald-600 dark:text-emerald-400 text-left text-xs font-semibold" dir="ltr">
+                                 {stats.high !== null && stats.high !== undefined ? stats.high : '—'}
+                               </td>
+                               <td className="px-4 py-3 font-mono text-rose-600 dark:text-rose-400 text-left text-xs font-semibold" dir="ltr">
+                                 {stats.low !== null && stats.low !== undefined ? stats.low : '—'}
+                               </td>
+                             </>
+                           );
+                         })()}
                          <td className="px-4 py-3 whitespace-nowrap">
                            <span className={`text-xs px-2 py-0.5 rounded-md ${
                              item.created_by && adminUsersMap[item.created_by] 
@@ -1392,6 +1494,36 @@ export default function Prices() {
                         className="w-full border dark:border-dark-border rounded-lg px-3 py-2 bg-slate-50 dark:bg-dark-bg text-slate-500 dark:text-slate-400 outline-none dark:bg-dark-card dark:text-white" />
                     </div>
                   </div>
+
+                  {editingItem && (() => {
+                    const stats = getTodayPriceStats(editingItem);
+                    return (
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-3 bg-slate-50 dark:bg-dark-bg rounded-lg border dark:border-dark-border text-xs">
+                        <div>
+                          <span className="text-slate-500 dark:text-slate-400 block mb-0.5">السعر المسجل:</span>
+                          <span className="font-mono font-bold text-slate-800 dark:text-slate-200" dir="ltr">{editingItem.price}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-500 dark:text-slate-400 block mb-0.5">السعر السابق:</span>
+                          <span className="font-mono font-semibold text-slate-600 dark:text-slate-400" dir="ltr">
+                            {editingItem.previous_price !== null && editingItem.previous_price !== undefined ? editingItem.previous_price : '—'}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-slate-500 dark:text-slate-400 block mb-0.5">أعلى سعر اليوم:</span>
+                          <span className="font-mono font-semibold text-emerald-600 dark:text-emerald-400" dir="ltr">
+                            {stats.high !== null && stats.high !== undefined ? stats.high : '—'}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-slate-500 dark:text-slate-400 block mb-0.5">أقل سعر اليوم:</span>
+                          <span className="font-mono font-semibold text-rose-600 dark:text-rose-400" dir="ltr">
+                            {stats.low !== null && stats.low !== undefined ? stats.low : '—'}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })()}
 
                   <div className="grid grid-cols-3 gap-4">
                     <div>

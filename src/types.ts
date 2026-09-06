@@ -30,6 +30,8 @@ export interface Commodity {
   change_value: number | null;
   change_percent: number | null;
   trend: 'up' | 'down' | 'neutral';
+  high?: number | null;
+  low?: number | null;
   status: 'active' | 'suspended' | 'closed';
   is_visible: boolean;
   unit: string | null;

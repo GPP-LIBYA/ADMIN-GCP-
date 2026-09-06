@@ -4,7 +4,8 @@ import { useAuthStore } from '../store/authStore';
 import { Download, Search, Edit2, Trash2, X, RefreshCw, BarChart2, CheckSquare, Square, FileText, Filter } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import type { SectorCatalog, CommodityCatalog } from '../types';
-import { formatAdminDateTime } from '../utils/dateUtils';
+import { formatAdminDateTime, getDayKey } from '../utils/dateUtils';
+import { syncCommodityDayHighLow } from '../utils/priceHighLowHelper';
 import {
   LineChart,
   Line,
@@ -161,20 +162,9 @@ export default function PriceHistory() {
     setHistory([]);
   };
 
-  // Helper to extract calendar day string (YYYY-MM-DD) based on local timezone
-  const getDayKey = (dateVal: string | Date | null | undefined): string => {
-    if (!dateVal) return 'unknown';
-    const d = new Date(dateVal);
-    if (isNaN(d.getTime())) return 'unknown';
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  };
-
-  // Helper function to extract ONE record per commodity PER DAY (Latest price by timestamp for that day)
+  // Helper function to extract ONE record per commodity PER DAY (Latest price by timestamp for that day, with true day High and Low)
   const extractLatestPerCommodityPerDay = (records: any[]): any[] => {
-    const latestMap = new Map<string, any>();
+    const bucketMap = new Map<string, any[]>();
     
     for (const row of records) {
       if (!row || !row.symbol) continue;
@@ -182,33 +172,56 @@ export default function PriceHistory() {
       const dayKey = getDayKey(row.recorded_at || row.created_at);
       const bucketKey = `${sym}__${dayKey}`;
       
-      if (!latestMap.has(bucketKey)) {
-        latestMap.set(bucketKey, row);
-      } else {
-        const existing = latestMap.get(bucketKey);
-        // Compare full recorded_at timestamp, using created_at as fallback
-        const existingTime = new Date(existing.recorded_at || existing.created_at || 0).getTime();
-        const rowTime = new Date(row.recorded_at || row.created_at || 0).getTime();
-        
-        if (rowTime > existingTime) {
-          latestMap.set(bucketKey, row);
-        } else if (rowTime === existingTime) {
-          // Tie breaker: compare created_at timestamp if recorded_at is identical
-          const existingCreated = new Date(existing.created_at || 0).getTime();
-          const rowCreated = new Date(row.created_at || 0).getTime();
-          if (rowCreated > existingCreated) {
-            latestMap.set(bucketKey, row);
-          } else if (rowCreated === existingCreated && row.id && existing.id) {
-            if (String(row.id) > String(existing.id)) {
-              latestMap.set(bucketKey, row);
+      if (!bucketMap.has(bucketKey)) {
+        bucketMap.set(bucketKey, []);
+      }
+      bucketMap.get(bucketKey)!.push(row);
+    }
+
+    const result: any[] = [];
+
+    for (const [, bucketRows] of bucketMap.entries()) {
+      if (bucketRows.length === 0) continue;
+
+      // 1. Identify the latest record of the day by recorded_at / created_at / id
+      let latestRow = bucketRows[0];
+      for (let i = 1; i < bucketRows.length; i++) {
+        const candidate = bucketRows[i];
+        const latestTime = new Date(latestRow.recorded_at || latestRow.created_at || 0).getTime();
+        const candidateTime = new Date(candidate.recorded_at || candidate.created_at || 0).getTime();
+
+        if (candidateTime > latestTime) {
+          latestRow = candidate;
+        } else if (candidateTime === latestTime) {
+          const latestCreated = new Date(latestRow.created_at || 0).getTime();
+          const candidateCreated = new Date(candidate.created_at || 0).getTime();
+          if (candidateCreated > latestCreated) {
+            latestRow = candidate;
+          } else if (candidateCreated === latestCreated && candidate.id && latestRow.id) {
+            if (String(candidate.id) > String(latestRow.id)) {
+              latestRow = candidate;
             }
           }
         }
       }
+
+      // 2. Compute true daily High and Low across all valid prices recorded on this day
+      const prices = bucketRows
+        .map(r => Number(r.price))
+        .filter(p => typeof p === 'number' && !isNaN(p) && isFinite(p) && p > 0);
+
+      const dayHigh = prices.length > 0 ? Math.max(...prices) : Number(latestRow.price);
+      const dayLow = prices.length > 0 ? Math.min(...prices) : Number(latestRow.price);
+
+      result.push({
+        ...latestRow,
+        high: dayHigh,
+        low: dayLow,
+      });
     }
 
     // Sort by latest recorded_at descending so recent days appear on top
-    return Array.from(latestMap.values()).sort((a, b) => {
+    return result.sort((a, b) => {
       const timeA = new Date(a.recorded_at || a.created_at || 0).getTime();
       const timeB = new Date(b.recorded_at || b.created_at || 0).getTime();
       return timeB - timeA;
@@ -271,6 +284,7 @@ export default function PriceHistory() {
     try {
       const { error } = await supabase.from('commodity_price_history').delete().eq('id', item.id);
       if (error) throw error;
+      await syncCommodityDayHighLow(supabase, item.symbol, item.recorded_at || item.created_at);
       fetchHistory();
     } catch (err) {
       console.error(err);
@@ -307,6 +321,8 @@ export default function PriceHistory() {
 
       if (error) throw error;
       
+      await syncCommodityDayHighLow(supabase, editingItem.symbol, editingItem.recorded_at || editingItem.created_at);
+
       setIsModalOpen(false);
       fetchHistory();
     } catch (err) {

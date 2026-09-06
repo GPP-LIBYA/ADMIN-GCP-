@@ -1,4 +1,5 @@
 import { SupabaseClient } from '@supabase/supabase-js';
+import { calculateDailyHighLow, getExistingPricesForDay } from './priceHighLowHelper';
 
 export const archiveCommodityPrices = async (supabase: SupabaseClient, commodities: any[]) => {
   if (!commodities || commodities.length === 0) return { success: true };
@@ -7,18 +8,31 @@ export const archiveCommodityPrices = async (supabase: SupabaseClient, commoditi
   let lastError = null;
 
   for (const c of commodities) {
+    let recHigh = typeof c.high === 'number' && !isNaN(c.high) ? c.high : null;
+    let recLow = typeof c.low === 'number' && !isNaN(c.low) ? c.low : null;
+
+    // If high or low wasn't explicitly precomputed, fetch day prices and compute
+    if (recHigh === null || recLow === null) {
+      const recDate = c.updated_at || new Date().toISOString();
+      const existingMap = await getExistingPricesForDay(supabase, [c.symbol], recDate);
+      const existingPrices = existingMap.get(String(c.symbol).trim().toUpperCase()) || [];
+      const calc = calculateDailyHighLow(existingPrices, Number(c.price));
+      recHigh = calc.high;
+      recLow = calc.low;
+    }
+
     const historyRecord: any = {
       symbol: c.symbol,
       name_ar: c.name_ar,
       name_en: c.name_en,
       sector: c.sector,
-      price: c.price,
-      previous_price: c.previous_price || c.price,
+      price: Number(c.price),
+      previous_price: c.previous_price !== undefined && c.previous_price !== null ? Number(c.previous_price) : Number(c.price),
       change_value: c.change_value || 0,
       change_percent: c.change_percent || 0,
       trend: c.trend || 'neutral',
-      high: c.price,
-      low: c.price,
+      high: recHigh,
+      low: recLow,
       unit: c.unit || null,
       source: c.source || null,
       recorded_at: c.updated_at || new Date().toISOString(),
