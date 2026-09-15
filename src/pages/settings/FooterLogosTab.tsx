@@ -38,6 +38,7 @@ export default function FooterLogosTab() {
   const [formName, setFormName] = useState('');
   const [formLinkUrl, setFormLinkUrl] = useState('');
   const [formDisplayOrder, setFormDisplayOrder] = useState<number>(0);
+  const [formLogoHeight, setFormLogoHeight] = useState<number>(36);
   const [formIsActive, setFormIsActive] = useState<boolean>(true);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -93,6 +94,7 @@ export default function FooterLogosTab() {
       ? Math.max(...logos.map(l => l.display_order || 0)) + 10 
       : 10;
     setFormDisplayOrder(nextOrder);
+    setFormLogoHeight(36);
     setFormIsActive(true);
     setSelectedFile(null);
     setPreviewUrl(null);
@@ -105,6 +107,10 @@ export default function FooterLogosTab() {
     setFormName(logo.name || '');
     setFormLinkUrl(logo.link_url || '');
     setFormDisplayOrder(logo.display_order || 0);
+    const heightVal = typeof logo.logo_height === 'number' && !isNaN(logo.logo_height)
+      ? Math.min(100, Math.max(20, logo.logo_height))
+      : 36;
+    setFormLogoHeight(heightVal);
     setFormIsActive(logo.is_active);
     setSelectedFile(null);
     setPreviewUrl(getPublicImageUrl(logo.storage_path));
@@ -188,11 +194,15 @@ export default function FooterLogosTab() {
         storagePath = newStoragePath;
       }
 
+      // Validate logo_height
+      const validatedHeight = Math.min(100, Math.max(20, Number(formLogoHeight) || 36));
+
       const payload = {
         name: formName.trim(),
         storage_path: storagePath,
         link_url: formLinkUrl.trim() || null,
         display_order: Number(formDisplayOrder) || 0,
+        logo_height: validatedHeight,
         is_active: formIsActive,
         updated_at: new Date().toISOString()
       };
@@ -405,6 +415,7 @@ export default function FooterLogosTab() {
                   <th className="py-3 px-4 font-semibold w-16 text-center">الترتيب</th>
                   <th className="py-3 px-4 font-semibold w-24">المعاينة</th>
                   <th className="py-3 px-4 font-semibold">اسم الشعار</th>
+                  <th className="py-3 px-4 font-semibold w-24 text-center">حجم الشعار</th>
                   <th className="py-3 px-4 font-semibold">رابط التوجيه</th>
                   <th className="py-3 px-4 font-semibold w-28 text-center">الحالة</th>
                   <th className="py-3 px-4 font-semibold w-32 text-center">الإجراءات</th>
@@ -474,6 +485,13 @@ export default function FooterLogosTab() {
                         <div className="text-[11px] text-slate-400 font-mono truncate max-w-[200px]" title={logo.storage_path}>
                           {logo.storage_path}
                         </div>
+                      </td>
+
+                      {/* Logo Size */}
+                      <td className="py-3 px-4 text-center">
+                        <span className="inline-block px-2.5 py-1 text-xs font-mono font-medium rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-dark-border">
+                          {logo.logo_height || 36} px
+                        </span>
                       </td>
 
                       {/* Link */}
@@ -663,6 +681,85 @@ export default function FooterLogosTab() {
                 <p className="text-[11px] text-slate-400 mt-1">
                   عند النقر على الشعار في الـ Footer سيتم توجيه الزائر إلى هذا الرابط في نافذة جديدة.
                 </p>
+              </div>
+
+              {/* Logo Size (Height) Slider + Number Input */}
+              <div className="p-3.5 bg-slate-50 dark:bg-dark-bg/60 border dark:border-dark-border rounded-xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-800 dark:text-slate-200">
+                      حجم الشعار (Logo Size)
+                    </label>
+                    <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                      الارتفاع المخصص: {formLogoHeight} px (المدى: 20 إلى 100 px)
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="number"
+                      min={20}
+                      max={100}
+                      step={1}
+                      value={formLogoHeight}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value, 10);
+                        if (isNaN(val)) {
+                          setFormLogoHeight(20);
+                        } else {
+                          setFormLogoHeight(Math.min(100, Math.max(20, val)));
+                        }
+                      }}
+                      className="w-20 text-center font-mono font-bold text-sm border dark:border-dark-border rounded-lg px-2 py-1 bg-white dark:bg-dark-card text-primary-600 dark:text-primary-400 outline-none focus:ring-2 focus:ring-primary-500"
+                    />
+                    <span className="text-xs text-slate-500 font-mono">px</span>
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <input
+                    type="range"
+                    min={20}
+                    max={100}
+                    step={1}
+                    value={formLogoHeight}
+                    onChange={(e) => setFormLogoHeight(parseInt(e.target.value, 10))}
+                    className="w-full h-2 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-primary-600 focus:outline-none"
+                  />
+                  <div className="flex justify-between text-[10px] text-slate-400 font-mono">
+                    <span>20 px (أصغر)</span>
+                    <span className="text-slate-500 font-semibold">36 px (الافتراضي)</span>
+                    <span>100 px (أكبر)</span>
+                  </div>
+                </div>
+
+                {/* Live Preview Container using exact logo_height */}
+                <div className="pt-2 border-t dark:border-dark-border/60">
+                  <div className="text-[11px] font-medium text-slate-600 dark:text-slate-400 mb-1.5 flex items-center justify-between">
+                    <span>معاينة حية بالحجم الفعلي (Live Preview):</span>
+                    <span className="font-mono text-[10px] text-primary-600 dark:text-primary-400 font-semibold">
+                      height: {formLogoHeight}px
+                    </span>
+                  </div>
+                  <div className="w-full min-h-[110px] max-h-[140px] rounded-lg border border-dashed border-slate-200 dark:border-slate-700/80 bg-white dark:bg-dark-card flex items-center justify-center p-3 overflow-hidden">
+                    {previewUrl ? (
+                      <img
+                        src={previewUrl}
+                        alt="Preview"
+                        style={{
+                          height: `${formLogoHeight}px`,
+                          width: 'auto',
+                          objectFit: 'contain'
+                        }}
+                        referrerPolicy="no-referrer"
+                      />
+                    ) : (
+                      <div className="text-center text-slate-400 text-xs flex flex-col items-center gap-1">
+                        <ImageIcon size={20} className="text-slate-300 dark:text-slate-600" />
+                        <span>قم باختيار أو رفع صورة الشعار لرؤية المعاينة الحية هنا</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
 
               {/* Display Order & Status */}

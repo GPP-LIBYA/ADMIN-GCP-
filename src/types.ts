@@ -159,6 +159,7 @@ export interface FooterLogo {
   storage_path: string;
   link_url?: string | null;
   display_order: number;
+  logo_height: number;
   is_active: boolean;
   created_at: string;
   updated_at: string;
