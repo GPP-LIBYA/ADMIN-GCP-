@@ -153,6 +153,17 @@ export interface PlatformSettings {
   updated_at: string;
 }
 
+export interface FooterLogo {
+  id: string | number;
+  name: string;
+  storage_path: string;
+  link_url?: string | null;
+  display_order: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface SectorCatalog {
   id: string;
   sector_code: string;
