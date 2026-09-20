@@ -171,6 +171,7 @@ export default function FooterLogosTab() {
         const sanitizedExt = fileExt.replace(/[^a-z0-9]/gi, '');
         const newStoragePath = `logo_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.${sanitizedExt}`;
 
+        // Upload exclusively to 'footer-logos' bucket
         const { error: uploadError } = await supabase.storage
           .from('footer-logos')
           .upload(newStoragePath, selectedFile, {
@@ -180,7 +181,7 @@ export default function FooterLogosTab() {
 
         if (uploadError) {
           console.error('Storage upload error:', uploadError);
-          throw new Error('فشل رفع الصورة إلى Storage: ' + uploadError.message);
+          throw new Error('فشل رفع الصورة إلى footer-logos: ' + uploadError.message);
         }
 
         // If editing and had an old storage path, remove old file from bucket

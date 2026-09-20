@@ -2,15 +2,16 @@ import { useState, useEffect, FormEvent } from 'react';
 import { supabase } from '../lib/supabase';
 import type { PlatformSettings } from '../types';
 import { useAuthStore } from '../store/authStore';
-import { Save, Settings2, ShieldAlert, Package, CheckSquare, Image as ImageIcon } from 'lucide-react';
+import { Save, Settings2, ShieldAlert, Package, CheckSquare, Image as ImageIcon, Layers } from 'lucide-react';
 import CommodityCatalogTab from './settings/CommodityCatalogTab';
 import UnitsCatalogTab from './settings/UnitsCatalogTab';
 import SectorsCatalogTab from './settings/SectorsCatalogTab';
 import FooterLogosTab from './settings/FooterLogosTab';
+import PlatformLogosTab from './settings/PlatformLogosTab';
 
 export default function Settings() {
   const { adminUser } = useAuthStore();
-  const [activeTab, setActiveTab] = useState<'general' | 'sectors' | 'commodities' | 'units' | 'footer_logos'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'sectors' | 'commodities' | 'units' | 'footer_logos' | 'platform_logos'>('general');
   const [settings, setSettings] = useState<PlatformSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -134,15 +135,26 @@ export default function Settings() {
           </>
         )}
         {isSuperAdmin && (
-          <button 
-            onClick={() => setActiveTab('footer_logos')}
-            className={`pb-3 px-1 border-b-2 font-medium text-sm flex items-center gap-1.5 transition ${
-              activeTab === 'footer_logos' ? 'border-primary-600 text-primary-600' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:text-slate-300'
-            }`}
-          >
-            <ImageIcon size={16} />
-            شعارات التذييل
-          </button>
+          <>
+            <button 
+              onClick={() => setActiveTab('platform_logos')}
+              className={`pb-3 px-1 border-b-2 font-medium text-sm flex items-center gap-1.5 transition ${
+                activeTab === 'platform_logos' ? 'border-primary-600 text-primary-600' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:text-slate-300'
+              }`}
+            >
+              <Layers size={16} />
+              شعارات المنصة (Header & Hero)
+            </button>
+            <button 
+              onClick={() => setActiveTab('footer_logos')}
+              className={`pb-3 px-1 border-b-2 font-medium text-sm flex items-center gap-1.5 transition ${
+                activeTab === 'footer_logos' ? 'border-primary-600 text-primary-600' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:text-slate-300'
+              }`}
+            >
+              <ImageIcon size={16} />
+              شعارات التذييل
+            </button>
+          </>
         )}
       </div>
 
@@ -282,6 +294,7 @@ export default function Settings() {
         {showAdvancedTabs && activeTab === 'sectors' && <SectorsCatalogTab />}
         {showAdvancedTabs && activeTab === 'commodities' && <CommodityCatalogTab />}
         {showAdvancedTabs && activeTab === 'units' && <UnitsCatalogTab />}
+        {isSuperAdmin && activeTab === 'platform_logos' && <PlatformLogosTab />}
         {isSuperAdmin && activeTab === 'footer_logos' && <FooterLogosTab />}
       </div>
     </div>

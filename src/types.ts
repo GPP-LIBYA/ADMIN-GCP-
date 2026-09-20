@@ -138,6 +138,22 @@ export interface SiteVisit {
   user_agent: string | null;
 }
 
+export interface PlatformLogoSettings {
+  header_logo_enabled: boolean;
+  header_logo_path: string;
+  header_logo_height: number;
+  header_logo_alignment: 'right' | 'center' | 'left';
+  header_logo_order: 'before_text' | 'after_text';
+  header_logo_gap: number;
+
+  hero_logo_enabled: boolean;
+  hero_logo_path: string;
+  hero_logo_size: number;
+  hero_logo_alignment: 'right' | 'center' | 'left';
+  hero_logo_vertical_position: 'top' | 'center' | 'bottom';
+  hero_logo_offset_y: number;
+}
+
 export interface PlatformSettings {
   id: string; // single row usually
   site_name: string;
