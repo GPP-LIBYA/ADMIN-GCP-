@@ -1,7 +1,7 @@
 name: Deploy to GitHub Pages
 
 on:
-  workflow_dispatch::
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -22,21 +22,16 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 18
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@v3
-        with:
-          version: 9
+          node-version: 22
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile=false
+        run: npm ci
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
 
       - name: Build project
-        run: pnpm run build
+        run: npm run build:production
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}

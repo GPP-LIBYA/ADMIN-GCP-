@@ -1,8 +1,8 @@
 import { useState, FormEvent } from 'react';
-import { supabase } from '../lib/supabase';
+import { supabase, isRealSupabaseConfigured } from '../lib/supabase';
 import { useAuthStore } from '../store/authStore';
 import { useNavigate } from 'react-router-dom';
-import { Lock, Mail } from 'lucide-react';
+import { Lock, Mail, ShieldCheck } from 'lucide-react';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -11,6 +11,24 @@ export default function Login() {
   const [errorMsg, setErrorMsg] = useState('');
   const { checkAuth } = useAuthStore();
   const navigate = useNavigate();
+
+  const handleDemoLogin = async () => {
+    setLoading(true);
+    setErrorMsg('');
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email: 'admin@gpp.ly',
+        password: 'demo',
+      });
+      if (error) throw error;
+      await checkAuth();
+      navigate('/dashboard');
+    } catch (err: any) {
+      setErrorMsg(err.message || 'فشل تسجيل الدخول التجريبي');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleLogin = async (e: FormEvent) => {
     e.preventDefault();
@@ -115,6 +133,23 @@ export default function Login() {
                 {loading ? 'جاري التحقق...' : 'دخول'}
               </button>
             </div>
+
+            {!isRealSupabaseConfigured && (
+              <div className="pt-2 border-t border-slate-200 dark:border-dark-border">
+                <button
+                  type="button"
+                  onClick={handleDemoLogin}
+                  disabled={loading}
+                  className="w-full flex items-center justify-center gap-2 rounded-md border border-primary-500/30 bg-primary-50 dark:bg-primary-950/30 py-2.5 px-4 text-sm font-semibold text-primary-700 dark:text-primary-300 hover:bg-primary-100 dark:hover:bg-primary-900/40 transition-colors"
+                >
+                  <ShieldCheck className="h-4 w-4" />
+                  دخول سريع كمدير عام (وضع المعاينة التجريبي)
+                </button>
+                <p className="mt-2 text-center text-xs text-slate-500 dark:text-slate-400">
+                  حساب التجربة: admin@gpp.ly | كلمة المرور: demo
+                </p>
+              </div>
+            )}
           </form>
         </div>
       </div>

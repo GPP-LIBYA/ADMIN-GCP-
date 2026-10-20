@@ -75,6 +75,7 @@ export interface Report {
   pdf_url: string;
   file_size?: number | null;
   pages_count?: number | null;
+  page_count?: number | null;
   created_by?: string | null;
   views_count?: number;
   downloads_count?: number;

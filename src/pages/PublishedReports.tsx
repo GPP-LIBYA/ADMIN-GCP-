@@ -1,11 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../store/authStore';
-import { FileText, Plus, Search, Edit, Trash2, Eye, Download, Archive, Upload, X, Image as ImageIcon } from 'lucide-react';
+import { 
+  FileText, Plus, Search, Edit, Trash2, Eye, Download, Archive, Upload, X, 
+  Image as ImageIcon, Save, CheckCircle2, AlertCircle, Loader2, Link as LinkIcon
+} from 'lucide-react';
 import { Report } from '../types';
 
 export default function PublishedReports() {
-  const { adminUser } = useAuthStore();
+  const { adminUser, session } = useAuthStore();
   const [reports, setReports] = useState<Report[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -21,9 +24,21 @@ export default function PublishedReports() {
   const [tags, setTags] = useState('');
   const [reportDate, setReportDate] = useState(new Date().toISOString().slice(0, 10));
   const [status, setStatus] = useState<'draft' | 'published' | 'archived'>('draft');
+  
+  // PDF & Cover State
+  const [pdfSourceType, setPdfSourceType] = useState<'upload' | 'url'>('upload');
   const [pdfFile, setPdfFile] = useState<File | null>(null);
+  const [pdfUrlInput, setPdfUrlInput] = useState('');
+
+  const [coverSourceType, setCoverSourceType] = useState<'upload' | 'url'>('upload');
   const [coverFile, setCoverFile] = useState<File | null>(null);
+  const [coverUrlInput, setCoverUrlInput] = useState('');
+  
+  // Save & Feedback State
   const [saving, setSaving] = useState(false);
+  const [saveStatusText, setSaveStatusText] = useState('');
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveSuccess, setSaveSuccess] = useState(false);
   
   const [sectors, setSectors] = useState<any[]>([]);
 
@@ -63,6 +78,10 @@ export default function PublishedReports() {
       setTags(report?.keywords ? report.keywords.join(', ') : '');
       setReportDate(report.report_date);
       setStatus(report.status);
+      setPdfUrlInput(report.pdf_url || '');
+      setCoverUrlInput(report.cover_image_url || '');
+      setPdfSourceType('upload');
+      setCoverSourceType('upload');
     } else {
       setEditingReport(null);
       setTitleAr('');
@@ -73,113 +92,271 @@ export default function PublishedReports() {
       setTags('');
       setReportDate(new Date().toISOString().slice(0, 10));
       setStatus('draft');
+      setPdfUrlInput('');
+      setCoverUrlInput('');
+      setPdfSourceType('upload');
+      setCoverSourceType('upload');
     }
     setPdfFile(null);
     setCoverFile(null);
+    setSaveError(null);
+    setSaveSuccess(false);
+    setSaveStatusText('');
     setIsModalOpen(true);
   };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (saving) return; // Prevent double submit
+
     setSaving(true);
+    setSaveError(null);
+    setSaveSuccess(false);
+    setSaveStatusText('جاري التحقق من البيانات...');
     
+    // Track newly uploaded paths during this attempt for cleanup if database save fails
+    const newlyUploadedPaths: string[] = [];
+
     try {
-      let pdfUrl = editingReport?.pdf_url || '';
-      let coverUrl = editingReport?.cover_image_url || null;
+      // 0. Validation
+      if (!titleAr.trim() || !titleEn.trim()) {
+        throw new Error('يرجى إدخال عنوان التقرير باللغتين العربية والإنجليزية');
+      }
+      if (!reportDate) {
+        throw new Error('يرجى تحديد تاريخ التقرير');
+      }
+
+      let finalPdfUrl = editingReport?.pdf_url || '';
+      let finalCoverUrl = editingReport?.cover_image_url || null;
       let fileSize = editingReport?.file_size || null;
-      let pageCount = editingReport?.pages_count || editingReport?.page_count || null;
+      const pageCount = editingReport?.pages_count || editingReport?.page_count || null;
 
-      // Upload PDF if selected
-      if (pdfFile) {
-        const fileExt = pdfFile.name.split('.').pop();
-        const fileName = `${Math.random().toString(36).substring(2)}-${Date.now()}.${fileExt}`;
-        const filePath = `pdfs/${fileName}`;
+      // 1. PDF Handling
+      if (pdfSourceType === 'upload') {
+        if (pdfFile) {
+          const MAX_PDF_SIZE_BYTES = 100 * 1024 * 1024; // 100MB
+          if (pdfFile.size > MAX_PDF_SIZE_BYTES) {
+            throw new Error('حجم ملف PDF يتجاوز الحد الأقصى المسموح به وهو 100MB.');
+          }
 
-        const { error: uploadError } = await supabase.storage
-          .from('reports')
-          .upload(filePath, pdfFile);
-
-        if (uploadError) throw uploadError;
-
-        const { data: { publicUrl } } = supabase.storage
-          .from('reports')
-          .getPublicUrl(filePath);
+          console.log('[PUBLISHED REPORT] PDF upload start');
+          setSaveStatusText('جاري رفع ملف التقرير (PDF)...');
           
-        pdfUrl = publicUrl;
-        fileSize = pdfFile.size;
-        // In a real app we might parse the PDF to get page count, but for now we leave it null or ask user
+          const ext = (pdfFile.name.split('.').pop() || 'pdf').toLowerCase().replace(/[^a-z0-9]/g, '');
+          const pdfPath = `pdfs/report_${Date.now()}_${Math.random().toString(36).substring(2, 9)}.${ext}`;
+          
+          const { data: uploadData, error: uploadError } = await supabase.storage
+            .from('reports')
+            .upload(pdfPath, pdfFile, {
+              contentType: 'application/pdf',
+              cacheControl: '3600',
+              upsert: true
+            });
+
+          if (uploadError) {
+            console.warn('[PUBLISHED REPORT] PDF upload error:', uploadError.message);
+            const isSizeError = uploadError.message?.toLowerCase().includes('exceeded the maximum allowed size') || 
+                                uploadError.message?.toLowerCase().includes('size') ||
+                                uploadError.message?.toLowerCase().includes('too large') ||
+                                uploadError.message?.toLowerCase().includes('413');
+            if (pdfFile.size > 100 * 1024 * 1024) {
+              throw new Error('حجم ملف PDF يتجاوز الحد الأقصى المسموح به وهو 100MB.');
+            } else if (isSizeError) {
+              const fileMb = (pdfFile.size / (1024 * 1024)).toFixed(2);
+              throw new Error(`حجم ملف PDF (${fileMb} MB) تم رفضه بواسطة خدمة التخزين Supabase (The object exceeded the maximum allowed size). يرجى التأكد من رفع Global file size limit في إعدادات Supabase Storage أو استخدام خيار "رابط مباشر".`);
+            }
+            throw new Error(`خطأ أثناء رفع ملف PDF إلى التخزين: ${uploadError.message}`);
+          }
+
+          newlyUploadedPaths.push(pdfPath);
+          
+          const { data: { publicUrl } } = supabase.storage
+            .from('reports')
+            .getPublicUrl(uploadData?.path || pdfPath);
+
+          finalPdfUrl = publicUrl;
+          fileSize = pdfFile.size;
+          console.log('[PUBLISHED REPORT] PDF upload success');
+        } else if (editingReport?.pdf_url) {
+          finalPdfUrl = editingReport.pdf_url;
+        } else {
+          throw new Error('يرجى اختيار ملف PDF للتقرير أو استخدام خيار رابط مباشر');
+        }
+      } else {
+        // Direct URL for PDF
+        if (!pdfUrlInput.trim()) {
+          throw new Error('يرجى إدخال رابط ملف PDF المباشر');
+        }
+        if (pdfUrlInput.trim().startsWith('data:')) {
+          throw new Error('ممنوع استخدام Data URL / Base64. يرجى إدخال رابط ويب صالح يبدأ بـ http:// أو https://');
+        }
+        finalPdfUrl = pdfUrlInput.trim();
       }
 
-      // Upload Cover if selected
-      if (coverFile) {
-        const fileExt = coverFile.name.split('.').pop();
-        const fileName = `${Math.random().toString(36).substring(2)}-${Date.now()}.${fileExt}`;
-        const filePath = `covers/${fileName}`;
-
-        const { error: uploadError } = await supabase.storage
-          .from('reports')
-          .upload(filePath, coverFile);
-
-        if (uploadError) throw uploadError;
-
-        const { data: { publicUrl } } = supabase.storage
-          .from('reports')
-          .getPublicUrl(filePath);
+      // 2. Cover Handling
+      if (coverSourceType === 'upload') {
+        if (coverFile) {
+          console.log('[PUBLISHED REPORT] Cover upload start');
+          setSaveStatusText('جاري رفع صورة الغلاف...');
           
-        coverUrl = publicUrl;
+          const ext = (coverFile.name.split('.').pop() || 'png').toLowerCase().replace(/[^a-z0-9]/g, '');
+          const coverPath = `covers/cover_${Date.now()}_${Math.random().toString(36).substring(2, 9)}.${ext}`;
+          
+          const { data: uploadData, error: uploadError } = await supabase.storage
+            .from('reports')
+            .upload(coverPath, coverFile, {
+              contentType: coverFile.type || 'image/png',
+              cacheControl: '3600',
+              upsert: true
+            });
+
+          if (uploadError) {
+            console.warn('[PUBLISHED REPORT] Cover upload error:', uploadError.message);
+            const isSizeError = uploadError.message?.toLowerCase().includes('exceeded the maximum allowed size') || 
+                                uploadError.message?.toLowerCase().includes('size') ||
+                                uploadError.message?.toLowerCase().includes('too large');
+            if (isSizeError) {
+              const sizeMb = (coverFile.size / (1024 * 1024)).toFixed(2);
+              throw new Error(`حجم صورة الغلاف (${sizeMb} MB) يتجاوز الحد المسموح به للتخزين في Supabase.`);
+            }
+            throw new Error(`خطأ أثناء رفع صورة الغلاف إلى التخزين: ${uploadError.message}`);
+          }
+
+          newlyUploadedPaths.push(coverPath);
+
+          const { data: { publicUrl } } = supabase.storage
+            .from('reports')
+            .getPublicUrl(uploadData?.path || coverPath);
+
+          finalCoverUrl = publicUrl;
+          console.log('[PUBLISHED REPORT] Cover upload success');
+        } else {
+          finalCoverUrl = editingReport?.cover_image_url || null;
+        }
+      } else {
+        // Direct URL for Cover
+        if (coverUrlInput.trim().startsWith('data:')) {
+          throw new Error('ممنوع استخدام Data URL لصورة الغلاف. يرجى إدخال رابط يبدأ بـ http:// أو https://');
+        }
+        finalCoverUrl = coverUrlInput.trim() || null;
       }
 
+      // 3. Database save
+      console.log('[PUBLISHED REPORT] Database save start');
+      setSaveStatusText('جاري حفظ بيانات التقرير في قاعدة البيانات...');
+      
       const tagsArray = tags.split(',').map(t => t.trim()).filter(t => t.length > 0);
+      const authorId = session?.user?.id || (typeof adminUser?.id === 'string' && adminUser.id.length === 36 ? adminUser.id : adminUser?.auth_user_id) || null;
 
-      const reportData = {
-        title_ar: titleAr,
-        title_en: titleEn,
-        description_ar: descriptionAr,
-        description_en: descriptionEn,
-        sector,
+      const reportData: any = {
+        title_ar: titleAr.trim(),
+        title_en: titleEn.trim(),
+        description_ar: descriptionAr.trim() || null,
+        description_en: descriptionEn.trim() || null,
+        sector: sector || null,
         keywords: tagsArray,
         report_date: reportDate,
         status,
         is_published: status === 'published',
-        pdf_url: pdfUrl,
-        cover_image_url: coverUrl,
+        pdf_url: finalPdfUrl,
+        cover_image_url: finalCoverUrl,
         file_size: fileSize,
         pages_count: pageCount,
-        created_by: adminUser?.id,
         updated_at: new Date().toISOString()
       };
 
+      let dbResult: any;
       if (editingReport) {
-        const { error } = await supabase
+        dbResult = await supabase
           .from('reports')
           .update(reportData)
-          .eq('id', editingReport.id);
-        if (error) throw error;
+          .eq('id', editingReport.id)
+          .select();
       } else {
-        if (!pdfUrl) {
-          throw new Error('يجب اختيار ملف PDF');
+        if (authorId) {
+          reportData.created_by = authorId;
         }
-        const { error } = await supabase
+
+        dbResult = await supabase
           .from('reports')
-          .insert(reportData);
-        if (error) throw error;
+          .insert(reportData)
+          .select();
       }
 
-      setIsModalOpen(false);
-      fetchReports();
+      console.log('[PUBLISHED REPORT] Database response:', {
+        status: dbResult?.status,
+        data: dbResult?.data,
+        error: dbResult?.error
+      });
+
+      if (dbResult?.error) {
+        // Cleanup newly uploaded orphan files if DB save failed
+        if (newlyUploadedPaths.length > 0) {
+          console.log('[PUBLISHED REPORT] Cleaning up orphan files after DB error:', newlyUploadedPaths);
+          try {
+            await supabase.storage.from('reports').remove(newlyUploadedPaths);
+          } catch (cleanupErr) {
+            console.warn('[PUBLISHED REPORT] Orphan cleanup warning:', cleanupErr);
+          }
+        }
+        throw dbResult.error;
+      }
+
+      // 4. Confirm success to user
+      setSaveStatusText('تم نشر التقرير بنجاح');
+      setSaveSuccess(true);
+
+      setTimeout(() => {
+        setIsModalOpen(false);
+        setSaving(false);
+        setSaveStatusText('');
+        setSaveSuccess(false);
+        fetchReports();
+      }, 700);
+
     } catch (err: any) {
-      console.error(err);
-      alert('خطأ أثناء الحفظ: ' + err.message);
-    } finally {
+      console.warn('[PUBLISHED REPORT] Save failed:', {
+        name: err.name,
+        message: err.message,
+        stack: err.stack
+      });
+
+      // Cleanup newly uploaded orphan files if any were uploaded before the error
+      if (newlyUploadedPaths.length > 0) {
+        console.log('[PUBLISHED REPORT] Cleaning up orphan files after exception:', newlyUploadedPaths);
+        try {
+          await supabase.storage.from('reports').remove(newlyUploadedPaths);
+        } catch (cleanupErr) {
+          console.warn('[PUBLISHED REPORT] Orphan cleanup warning:', cleanupErr);
+        }
+      }
+
+      const message = err.message || err.error_description || 'تعذر حفظ بيانات التقرير';
+      setSaveError(message);
       setSaving(false);
+      setSaveStatusText('');
     }
+  };
+
+  const handleViewPdf = (pdfUrl: string) => {
+    if (!pdfUrl) return;
+    window.open(pdfUrl, '_blank');
+  };
+
+  const handleDownloadPdf = (pdfUrl: string, title: string) => {
+    if (!pdfUrl) return;
+    const link = document.createElement('a');
+    link.href = pdfUrl;
+    link.download = `${title || 'report'}.pdf`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const handleDelete = async (id: string | number, pdfUrl: string, coverUrl: string | null) => {
     if (!window.confirm('هل أنت متأكد من حذف هذا التقرير؟ سيتم حذف الملفات المرتبطة به أيضاً.')) return;
     
     try {
-      // Extract file paths from URLs and delete from storage
       if (pdfUrl) {
         const pdfPath = pdfUrl.split('/reports/').pop();
         if (pdfPath) await supabase.storage.from('reports').remove([pdfPath]);
@@ -334,16 +511,24 @@ export default function PublishedReports() {
                     </td>
                     <td className="py-4 px-6">
                       <div className="flex items-center justify-center gap-2">
-                        <a 
-                          href={report.pdf_url} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
+                        <button 
+                          type="button"
+                          onClick={() => handleViewPdf(report.pdf_url)} 
                           className="p-2 text-slate-400 hover:text-blue-600 bg-white border border-slate-200 rounded-lg shadow-sm hover:shadow transition-all"
                           title="عرض PDF"
                         >
                           <Eye size={18} />
-                        </a>
+                        </button>
                         <button 
+                          type="button"
+                          onClick={() => handleDownloadPdf(report.pdf_url, report.title_ar || report.title_en)} 
+                          className="p-2 text-slate-400 hover:text-emerald-600 bg-white border border-slate-200 rounded-lg shadow-sm hover:shadow transition-all"
+                          title="تحميل PDF"
+                        >
+                          <Download size={18} />
+                        </button>
+                        <button 
+                          type="button"
                           onClick={() => handleOpenModal(report)}
                           className="p-2 text-slate-400 hover:text-[#1e3a8a] bg-white border border-slate-200 rounded-lg shadow-sm hover:shadow transition-all"
                           title="تعديل"
@@ -383,8 +568,32 @@ export default function PublishedReports() {
             </div>
             
             <div className="p-6 overflow-y-auto">
-              <form id="report-form" onSubmit={handleSave} className="space-y-8">
+              <form id="report-form" onSubmit={handleSave} className="space-y-6">
                 
+                {/* Error Banner */}
+                {saveError && (
+                  <div className="flex items-center gap-3 p-4 bg-red-50 border border-red-200 text-red-700 rounded-xl text-sm font-medium">
+                    <AlertCircle className="w-5 h-5 flex-shrink-0 text-red-500" />
+                    <div className="flex-1 font-semibold">{saveError}</div>
+                  </div>
+                )}
+
+                {/* Progress / Success Banner */}
+                {(saving || saveSuccess) && (
+                  <div className={`flex items-center gap-3 p-4 rounded-xl text-sm font-bold border transition-all ${
+                    saveSuccess 
+                      ? 'bg-emerald-50 border-emerald-200 text-emerald-800' 
+                      : 'bg-blue-50 border-blue-200 text-blue-900'
+                  }`}>
+                    {saveSuccess ? (
+                      <CheckCircle2 className="w-5 h-5 flex-shrink-0 text-emerald-600" />
+                    ) : (
+                      <Loader2 className="w-5 h-5 flex-shrink-0 text-[#1e3a8a] animate-spin" />
+                    )}
+                    <div className="flex-1">{saveStatusText || 'جاري معالجة ونشر التقرير...'}</div>
+                  </div>
+                )}
+
                 {/* Titles */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2">
@@ -392,9 +601,10 @@ export default function PublishedReports() {
                     <input 
                       required
                       type="text" 
+                      disabled={saving}
                       value={titleAr}
                       onChange={e => setTitleAr(e.target.value)}
-                      className="w-full p-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#1e3a8a] focus:border-transparent outline-none transition-all" 
+                      className="w-full p-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#1e3a8a] focus:border-transparent outline-none transition-all disabled:bg-slate-100 disabled:text-slate-400" 
                     />
                   </div>
                   <div className="space-y-2">
@@ -402,10 +612,11 @@ export default function PublishedReports() {
                     <input 
                       required
                       type="text" 
+                      disabled={saving}
                       value={titleEn}
                       onChange={e => setTitleEn(e.target.value)}
                       dir="ltr"
-                      className="w-full p-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#1e3a8a] focus:border-transparent outline-none transition-all" 
+                      className="w-full p-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#1e3a8a] focus:border-transparent outline-none transition-all disabled:bg-slate-100 disabled:text-slate-400" 
                     />
                   </div>
                 </div>
@@ -416,19 +627,21 @@ export default function PublishedReports() {
                     <label className="block text-sm font-bold text-slate-700">وصف مختصر (عربي)</label>
                     <textarea 
                       rows={3}
+                      disabled={saving}
                       value={descriptionAr}
                       onChange={e => setDescriptionAr(e.target.value)}
-                      className="w-full p-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#1e3a8a] focus:border-transparent outline-none transition-all resize-none" 
+                      className="w-full p-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#1e3a8a] focus:border-transparent outline-none transition-all resize-none disabled:bg-slate-100 disabled:text-slate-400" 
                     />
                   </div>
                   <div className="space-y-2">
                     <label className="block text-sm font-bold text-slate-700">وصف مختصر (إنجليزي)</label>
                     <textarea 
                       rows={3}
+                      disabled={saving}
                       value={descriptionEn}
                       onChange={e => setDescriptionEn(e.target.value)}
                       dir="ltr"
-                      className="w-full p-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#1e3a8a] focus:border-transparent outline-none transition-all resize-none" 
+                      className="w-full p-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#1e3a8a] focus:border-transparent outline-none transition-all resize-none disabled:bg-slate-100 disabled:text-slate-400" 
                     />
                   </div>
                 </div>
@@ -438,9 +651,10 @@ export default function PublishedReports() {
                   <div className="space-y-2">
                     <label className="block text-sm font-bold text-slate-700">القطاع</label>
                     <select 
+                      disabled={saving}
                       value={sector}
                       onChange={e => setSector(e.target.value)}
-                      className="w-full p-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#1e3a8a] focus:border-transparent outline-none transition-all"
+                      className="w-full p-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#1e3a8a] focus:border-transparent outline-none transition-all disabled:bg-slate-100 disabled:text-slate-400"
                     >
                       <option value="">عام / جميع القطاعات</option>
                       {sectors.map(s => (
@@ -453,17 +667,19 @@ export default function PublishedReports() {
                     <input 
                       required
                       type="date" 
+                      disabled={saving}
                       value={reportDate}
                       onChange={e => setReportDate(e.target.value)}
-                      className="w-full p-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#1e3a8a] focus:border-transparent outline-none transition-all font-mono" 
+                      className="w-full p-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#1e3a8a] focus:border-transparent outline-none transition-all font-mono disabled:bg-slate-100 disabled:text-slate-400" 
                     />
                   </div>
                   <div className="space-y-2">
                     <label className="block text-sm font-bold text-slate-700">حالة النشر</label>
                     <select 
+                      disabled={saving}
                       value={status}
                       onChange={e => setStatus(e.target.value as any)}
-                      className="w-full p-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#1e3a8a] focus:border-transparent outline-none transition-all"
+                      className="w-full p-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#1e3a8a] focus:border-transparent outline-none transition-all disabled:bg-slate-100 disabled:text-slate-400"
                     >
                       <option value="draft">مسودة</option>
                       <option value="published">منشور</option>
@@ -476,65 +692,223 @@ export default function PublishedReports() {
                   <label className="block text-sm font-bold text-slate-700">الكلمات المفتاحية (مفصولة بفاصلة)</label>
                   <input 
                     type="text" 
+                    disabled={saving}
                     value={tags}
                     onChange={e => setTags(e.target.value)}
                     placeholder="طاقة، نفط، 2026..."
-                    className="w-full p-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#1e3a8a] focus:border-transparent outline-none transition-all" 
+                    className="w-full p-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#1e3a8a] focus:border-transparent outline-none transition-all disabled:bg-slate-100 disabled:text-slate-400" 
                   />
                 </div>
 
-                {/* Files */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-6 bg-slate-50 rounded-xl border border-slate-200">
-                  <div className="space-y-4">
-                    <label className="block text-sm font-bold text-slate-700">ملف التقرير (PDF) {editingReport ? '' : '*'}</label>
-                    <div className="relative">
-                      <input 
-                        type="file" 
-                        accept=".pdf"
-                        onChange={e => setPdfFile(e.target.files?.[0] || null)}
-                        className="hidden"
-                        id="pdf-upload"
-                      />
-                      <label 
-                        htmlFor="pdf-upload"
-                        className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-slate-300 rounded-xl cursor-pointer hover:bg-slate-100 transition-colors"
-                      >
-                        <Upload className="w-8 h-8 text-slate-400 mb-2" />
-                        <span className="text-sm text-slate-600 font-medium">
-                          {pdfFile ? pdfFile.name : (editingReport?.pdf_url ? 'تغيير الملف الحالي' : 'اختر ملف PDF')}
-                        </span>
-                        {editingReport?.pdf_url && !pdfFile && (
-                          <span className="text-xs text-blue-600 mt-1">ملف مرفوع مسبقاً</span>
-                        )}
-                      </label>
-                    </div>
-                  </div>
+                {/* Files Section */}
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-6 bg-slate-50 rounded-xl border border-slate-200">
+                    
+                    {/* PDF Section */}
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <label className="block text-sm font-bold text-slate-700">
+                          ملف التقرير (PDF) {editingReport ? '' : '*'}
+                        </label>
+                        <div className="flex items-center bg-slate-200 p-0.5 rounded-lg text-xs font-medium">
+                          <button
+                            type="button"
+                            disabled={saving}
+                            onClick={() => setPdfSourceType('upload')}
+                            className={`px-3 py-1 rounded-md transition-all ${
+                              pdfSourceType === 'upload' 
+                                ? 'bg-white text-[#1e3a8a] font-bold shadow-sm' 
+                                : 'text-slate-600 hover:text-slate-900'
+                            }`}
+                          >
+                            <span className="flex items-center gap-1">
+                              <Upload size={12} />
+                              رفع ملف
+                            </span>
+                          </button>
+                          <button
+                            type="button"
+                            disabled={saving}
+                            onClick={() => setPdfSourceType('url')}
+                            className={`px-3 py-1 rounded-md transition-all ${
+                              pdfSourceType === 'url' 
+                                ? 'bg-white text-[#1e3a8a] font-bold shadow-sm' 
+                                : 'text-slate-600 hover:text-slate-900'
+                            }`}
+                          >
+                            <span className="flex items-center gap-1">
+                              <LinkIcon size={12} />
+                              رابط مباشر
+                            </span>
+                          </button>
+                        </div>
+                      </div>
 
-                  <div className="space-y-4">
-                    <label className="block text-sm font-bold text-slate-700">صورة الغلاف (اختياري)</label>
-                    <div className="relative">
-                      <input 
-                        type="file" 
-                        accept="image/*"
-                        onChange={e => setCoverFile(e.target.files?.[0] || null)}
-                        className="hidden"
-                        id="cover-upload"
-                      />
-                      <label 
-                        htmlFor="cover-upload"
-                        className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-slate-300 rounded-xl cursor-pointer hover:bg-slate-100 transition-colors overflow-hidden relative"
-                      >
-                        {coverFile ? (
-                          <img src={URL.createObjectURL(coverFile)} alt="Preview" className="w-full h-full object-cover" />
-                        ) : editingReport?.cover_image_url ? (
-                          <img src={editingReport.cover_image_url} alt="Cover" className="w-full h-full object-cover" />
-                        ) : (
-                          <>
-                            <ImageIcon className="w-8 h-8 text-slate-400 mb-2" />
-                            <span className="text-sm text-slate-600 font-medium">اختر صورة غلاف</span>
-                          </>
-                        )}
-                      </label>
+                      {pdfSourceType === 'upload' ? (
+                        <div className="space-y-2">
+                          <div className="relative">
+                            <input 
+                              type="file" 
+                              accept=".pdf,application/pdf"
+                              disabled={saving}
+                              onChange={e => {
+                                const file = e.target.files?.[0] || null;
+                                setPdfFile(file);
+                                if (file && file.size > 100 * 1024 * 1024) {
+                                  setSaveError('حجم ملف PDF يتجاوز الحد الأقصى المسموح به وهو 100MB.');
+                                } else if (saveError === 'حجم ملف PDF يتجاوز الحد الأقصى المسموح به وهو 100MB.') {
+                                  setSaveError(null);
+                                }
+                              }}
+                              className="hidden"
+                              id="pdf-upload"
+                            />
+                            <label 
+                              htmlFor={saving ? undefined : "pdf-upload"}
+                              className={`flex flex-col items-center justify-center w-full h-36 border-2 border-dashed border-slate-300 rounded-xl transition-colors ${
+                                saving ? 'bg-slate-100 cursor-not-allowed opacity-60' : 'cursor-pointer hover:bg-slate-100'
+                              }`}
+                            >
+                              <Upload className="w-8 h-8 text-slate-400 mb-2" />
+                              <span className="text-sm text-slate-600 font-medium text-center px-4 truncate max-w-full">
+                                {pdfFile ? pdfFile.name : (editingReport?.pdf_url ? 'تغيير ملف PDF الحالي' : 'اختر ملف PDF من جهازك')}
+                              </span>
+                              {pdfFile && (
+                                <span className={`text-xs font-semibold mt-1 ${pdfFile.size > 100 * 1024 * 1024 ? 'text-red-600' : 'text-emerald-600'}`}>
+                                  {(pdfFile.size / (1024 * 1024)).toFixed(2)} MB {pdfFile.size > 100 * 1024 * 1024 ? '(يتجاوز 100MB)' : 'جاهز للرفع'}
+                                </span>
+                              )}
+                              {editingReport?.pdf_url && !pdfFile && (
+                                <span className="text-xs text-blue-600 mt-1 truncate max-w-[280px]">
+                                  ملف التقرير المحفوظ
+                                </span>
+                              )}
+                            </label>
+                          </div>
+
+                          {/* Pre-upload size notice if exceeds 100MB */}
+                          {pdfFile && pdfFile.size > 100 * 1024 * 1024 && (
+                            <div className="p-2.5 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 font-semibold flex items-center gap-1.5 leading-relaxed">
+                              <AlertCircle size={15} className="flex-shrink-0 text-red-500" />
+                              <span>حجم ملف PDF يتجاوز الحد الأقصى المسموح به وهو 100MB.</span>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="space-y-1.5">
+                          <div className="relative">
+                            <input 
+                              type="url"
+                              disabled={saving}
+                              value={pdfUrlInput}
+                              onChange={e => setPdfUrlInput(e.target.value)}
+                              placeholder="https://drive.google.com/... أو https://example.com/report.pdf"
+                              dir="ltr"
+                              className="w-full p-3 pl-9 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#1e3a8a] focus:border-transparent outline-none transition-all text-sm disabled:bg-slate-100"
+                            />
+                            <LinkIcon className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                          </div>
+                          <p className="text-[11px] text-slate-500 leading-relaxed">
+                            أدخل رابطاً مباشراً لملف PDF (مثل رابط مشاركة عام من Google Drive أو Dropbox أو خادم خارجي).
+                          </p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Cover Section */}
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <label className="block text-sm font-bold text-slate-700">
+                          صورة الغلاف (اختياري)
+                        </label>
+                        <div className="flex items-center bg-slate-200 p-0.5 rounded-lg text-xs font-medium">
+                          <button
+                            type="button"
+                            disabled={saving}
+                            onClick={() => setCoverSourceType('upload')}
+                            className={`px-3 py-1 rounded-md transition-all ${
+                              coverSourceType === 'upload' 
+                                ? 'bg-white text-[#1e3a8a] font-bold shadow-sm' 
+                                : 'text-slate-600 hover:text-slate-900'
+                            }`}
+                          >
+                            <span className="flex items-center gap-1">
+                              <Upload size={12} />
+                              رفع صورة
+                            </span>
+                          </button>
+                          <button
+                            type="button"
+                            disabled={saving}
+                            onClick={() => setCoverSourceType('url')}
+                            className={`px-3 py-1 rounded-md transition-all ${
+                              coverSourceType === 'url' 
+                                ? 'bg-white text-[#1e3a8a] font-bold shadow-sm' 
+                                : 'text-slate-600 hover:text-slate-900'
+                            }`}
+                          >
+                            <span className="flex items-center gap-1">
+                              <LinkIcon size={12} />
+                              رابط مباشر
+                            </span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {coverSourceType === 'upload' ? (
+                        <div className="relative">
+                          <input 
+                            type="file" 
+                            accept="image/*"
+                            disabled={saving}
+                            onChange={e => setCoverFile(e.target.files?.[0] || null)}
+                            className="hidden"
+                            id="cover-upload"
+                          />
+                          <label 
+                            htmlFor={saving ? undefined : "cover-upload"}
+                            className={`flex flex-col items-center justify-center w-full h-36 border-2 border-dashed border-slate-300 rounded-xl transition-colors overflow-hidden relative ${
+                              saving ? 'bg-slate-100 cursor-not-allowed opacity-60' : 'cursor-pointer hover:bg-slate-100'
+                            }`}
+                          >
+                            {coverFile ? (
+                              <img src={URL.createObjectURL(coverFile)} alt="Preview" className="w-full h-full object-cover" />
+                            ) : (editingReport?.cover_image_url && !coverFile) ? (
+                              <img src={editingReport.cover_image_url} alt="Cover" className="w-full h-full object-cover" />
+                            ) : (
+                              <>
+                                <ImageIcon className="w-8 h-8 text-slate-400 mb-2" />
+                                <span className="text-sm text-slate-600 font-medium">اختر صورة غلاف</span>
+                              </>
+                            )}
+                          </label>
+                        </div>
+                      ) : (
+                        <div className="space-y-1.5">
+                          <div className="relative">
+                            <input 
+                              type="url"
+                              disabled={saving}
+                              value={coverUrlInput}
+                              onChange={e => setCoverUrlInput(e.target.value)}
+                              placeholder="https://example.com/cover.png"
+                              dir="ltr"
+                              className="w-full p-3 pl-9 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#1e3a8a] focus:border-transparent outline-none transition-all text-sm disabled:bg-slate-100"
+                            />
+                            <LinkIcon className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                          </div>
+                          {coverUrlInput && (
+                            <div className="h-20 w-full rounded-lg overflow-hidden border border-slate-200 bg-slate-100 flex items-center justify-center">
+                              <img 
+                                src={coverUrlInput} 
+                                alt="Preview" 
+                                className="h-full w-full object-cover" 
+                                onError={(e) => { (e.target as HTMLElement).style.display = 'none'; }} 
+                              />
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -546,7 +920,7 @@ export default function PublishedReports() {
               <button
                 type="button"
                 onClick={() => setIsModalOpen(false)}
-                className="px-6 py-2.5 text-slate-600 font-bold hover:bg-slate-200 rounded-xl transition-colors"
+                className="px-6 py-2.5 text-slate-600 font-bold hover:bg-slate-200 rounded-xl transition-colors disabled:opacity-50"
                 disabled={saving}
               >
                 إلغاء
@@ -555,10 +929,18 @@ export default function PublishedReports() {
                 type="submit"
                 form="report-form"
                 disabled={saving}
-                className="flex items-center justify-center gap-2 px-8 py-2.5 bg-[#1e3a8a] text-white font-bold rounded-xl hover:bg-blue-900 transition-colors disabled:opacity-70 min-w-[140px]"
+                className="flex items-center justify-center gap-2 px-8 py-2.5 bg-[#1e3a8a] text-white font-bold rounded-xl hover:bg-blue-900 transition-colors disabled:opacity-75 disabled:cursor-not-allowed min-w-[170px]"
               >
                 {saving ? (
-                  <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    <span className="text-sm font-semibold">{saveStatusText || 'جاري الحفظ...'}</span>
+                  </>
+                ) : saveSuccess ? (
+                  <>
+                    <CheckCircle2 className="w-5 h-5 text-emerald-300" />
+                    <span>تم النشر بنجاح</span>
+                  </>
                 ) : (
                   <>
                     <Save size={20} />
@@ -573,6 +955,3 @@ export default function PublishedReports() {
     </div>
   );
 }
-
-// Needed missing import
-import { Save } from 'lucide-react';
