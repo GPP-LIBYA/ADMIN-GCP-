@@ -4,12 +4,20 @@ import {defineConfig, loadEnv} from 'vite';
 
 export default defineConfig(({mode}) => {
   const env = loadEnv(mode, process.cwd(), '');
-  const isProductionDeploy =
-    process.env.VITE_DEPLOY_TARGET === 'production' ||
-    env.VITE_DEPLOY_TARGET === 'production';
+  const deployTarget =
+    process.env.VITE_DEPLOY_TARGET ||
+    env.VITE_DEPLOY_TARGET ||
+    '';
+
+  let base = '/';
+  if (deployTarget === 'production') {
+    base = '/admin/';
+  } else if (deployTarget === 'github-pages') {
+    base = '/ADMIN-GCP-/';
+  }
 
   return {
-    base: isProductionDeploy ? '/admin/' : '/',
+    base,
     plugins: [react()],
     resolve: {
       alias: {
