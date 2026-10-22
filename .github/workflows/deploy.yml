@@ -31,7 +31,7 @@ jobs:
         uses: actions/configure-pages@v4
 
       - name: Build project
-        run: npm run build:production
+        run: npm run build:github-pages
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
