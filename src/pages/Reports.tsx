@@ -44,8 +44,40 @@ import { TopMoversChart } from '../components/reports/TopMoversChart';
 import { DashboardExportToolbar, type DashboardExportScope } from '../components/reports/DashboardExportToolbar';
 import { DashboardPrintTemplate } from '../components/reports/DashboardPrintTemplate';
 
+// Certified Commodity Arabic Names dictionary for complete official naming
+const COMMODITY_NAME_MAP: Record<string, string> = {
+  'WHEAT_US': 'القمح الأمريكي الصلب',
+  'CORN_US': 'الذرة الأمريكية الصفراء',
+  'SOYBEANS': 'فول الصويا الأمريكي',
+  'ROUGH_RICE': 'الأرز الخشن الأمريكي',
+  'BRENT': 'نفط خام برنت القياسي',
+  'WTI': 'خام غرب تكساس الوسيط',
+  'NATURAL_GAS': 'الغاز الطبيعي المسال',
+  'HEATING_OIL': 'زيت التدفئة العالمي',
+  'GOLD': 'الذهب الصافي عيار 24',
+  'SILVER': 'الفضة النقية الخالصة',
+  'COPPER': 'النحاس عالي النقاوة',
+  'PLATINUM': 'البلاتين الاستثماري',
+  'PALLADIUM': 'البلاديوم الصناعي',
+  'SUGAR': 'السكر الخام العالمي',
+  'COFFEE': 'البن والقهوة العالمية',
+  'COCOA': 'الكاكاو الخام القياسي',
+  'COTTON': 'القطن الطبيعي القياسي'
+};
 
-
+// Economic Sectors Arabic Dictionary
+const SECTOR_NAME_MAP: Record<string, string> = {
+  'energy': 'الطاقة والنفط',
+  'metals': 'المعادن الثمينة والصناعية',
+  'precious_metals': 'المعادن الثمينة',
+  'industrial_metals': 'المعادن الصناعية',
+  'agriculture': 'المنتجات الزراعية',
+  'grains': 'الحبوب والزيوت النباتية',
+  'meat': 'اللحوم والمنتجات الحيوانية',
+  'livestock': 'الثروة الحيوانية',
+  'softs': 'السلع الاستهلاكية الرخوة',
+  'food': 'السلع الغذائية'
+};
 
 const ReportLogo = ({ className, alt = "Libya Trade Network Logo", url }: { className?: string, alt?: string, url: string }) => {
   const [hasError, setHasError] = React.useState(false);
@@ -204,6 +236,42 @@ const Reports: React.FC = () => {
     } catch (err) {
       console.error(err);
     }
+  };
+
+  const getSectorArabicName = (sectorVal?: string): string => {
+    if (!sectorVal || sectorVal === '---' || sectorVal === '-') return '—';
+    const found = sectors.find((s: any) => 
+      s.sector_code === sectorVal || 
+      s.name_ar === sectorVal || 
+      s.name_en?.toLowerCase() === sectorVal.toLowerCase()
+    );
+    if (found?.name_ar) return found.name_ar;
+    const lower = sectorVal.toLowerCase();
+    if (SECTOR_NAME_MAP[lower]) return SECTOR_NAME_MAP[lower];
+    return sectorVal;
+  };
+
+  const getCommodityArabicName = (symbol: string, rawNameAr?: string): string => {
+    if (rawNameAr && rawNameAr !== symbol && rawNameAr.trim().length > 0) return rawNameAr;
+    const inCatalog = catalog.find(c => c.symbol === symbol);
+    if (inCatalog?.name_ar) return inCatalog.name_ar;
+    const inPrices = reportData?.prices?.find((p: any) => p.symbol === symbol);
+    if (inPrices?.name_ar) return inPrices.name_ar;
+    if (COMMODITY_NAME_MAP[symbol]) return COMMODITY_NAME_MAP[symbol];
+    return symbol;
+  };
+
+  const formatSourceDisplay = (sourceVal?: string): string => {
+    if (!sourceVal || sourceVal === '-' || sourceVal === '---') return '—';
+    const s = sourceVal.trim();
+    if (s.toLowerCase() === 'investing' || s.toLowerCase() === 'investing.com') return 'Investing';
+    if (s.toLowerCase() === 'cme' || s.toLowerCase() === 'cme group') return 'CME Group';
+    if (s.toLowerCase() === 'cbot') return 'CBOT';
+    if (s.toLowerCase() === 'ice') return 'ICE';
+    if (s.toLowerCase() === 'lme') return 'LME';
+    if (s.toLowerCase() === 'bloomberg') return 'Bloomberg';
+    if (s.toLowerCase() === 'reuters') return 'Reuters';
+    return s.charAt(0).toUpperCase() + s.slice(1);
   };
 
   const handleGenerate = async () => {
@@ -365,32 +433,57 @@ const Reports: React.FC = () => {
       setExporting(true);
       if (activeMainView !== 'detailed_document') {
         setActiveMainView('detailed_document');
-        await new Promise(resolve => setTimeout(resolve, 400));
-      } else {
         await new Promise(resolve => setTimeout(resolve, 500));
+      } else {
+        await new Promise(resolve => setTimeout(resolve, 300));
       }
+
+      // Ensure all custom Cairo font weights are fully loaded and rendered before capture
+      if (document.fonts) {
+        await Promise.all([
+          document.fonts.load('bold 24px Cairo'),
+          document.fonts.load('900 24px Cairo'),
+          document.fonts.load('800 24px Cairo'),
+          document.fonts.load('bold 16px Cairo'),
+          document.fonts.load('bold 12px Cairo'),
+          document.fonts.load('normal 12px Cairo'),
+          document.fonts.load('normal 11px Cairo'),
+          document.fonts.load('bold 11px Cairo'),
+          document.fonts.ready
+        ]).catch(() => {});
+      }
+
+      // Reflow pause to guarantee crisp ligature calculation and table cell bounds
+      await new Promise(resolve => setTimeout(resolve, 150));
 
       const pages = reportRef.current.querySelectorAll('.report-page');
       if (pages.length === 0) {
         throw new Error('No pages found');
       }
 
+      const firstIsLandscape = pages[0].getAttribute('data-orientation') === 'landscape';
       const pdf = new jsPDF(
-        pages[0].getAttribute('data-orientation') === 'landscape' ? 'l' : 'p', 
+        firstIsLandscape ? 'l' : 'p', 
         'mm', 
         'a4'
       );
 
       for (let i = 0; i < pages.length; i++) {
-        const page = pages[i];
+        const page = pages[i] as HTMLElement;
         const isLandscape = page.getAttribute('data-orientation') === 'landscape';
 
         const canvas = await html2canvas(page, {
           scale: 2,
           backgroundColor: '#ffffff',
           useCORS: true,
-          allowTaint: false,
+          allowTaint: true,
           logging: false,
+          x: 0,
+          y: 0,
+          scrollX: 0,
+          scrollY: 0,
+          windowWidth: isLandscape ? 1123 : 794,
+          windowHeight: isLandscape ? 794 : 1123,
         });
 
         const imgData = canvas.toDataURL('image/png', 1.0);
@@ -401,10 +494,10 @@ const Reports: React.FC = () => {
           pdf.addPage('a4', isLandscape ? 'l' : 'p');
         }
 
-        pdf.addImage(imgData, 'PNG', 0, 0, pageWidth, pageHeight);
+        pdf.addImage(imgData, 'PNG', 0, 0, pageWidth, pageHeight, undefined, 'FAST');
       }
 
-      let fileName = `report-${new Date().toISOString().slice(0, 10)}.pdf`;
+      let fileName = `GPP-Economic-Report-${new Date().toISOString().slice(0, 10)}.pdf`;
       if (reportType === 'detailed_commodity' && symbolFilter) {
         fileName = `commodity-report-${symbolFilter}-${new Date().toISOString().slice(0, 10)}.pdf`;
       }
@@ -1231,10 +1324,10 @@ const Reports: React.FC = () => {
       return {
         date: lastRow.recorded_at || lastRow.created_at,
         symbol,
-        name_ar: commodityInfo?.name_ar || symbol,
+        name_ar: commodityInfo?.name_ar || COMMODITY_NAME_MAP[symbol] || symbol,
         name_en: commodityInfo?.name_en || symbol,
         sector: commodityInfo?.sector || '---',
-        unit: commodityInfo?.unit || '---',
+        unit: symbol === 'WHEAT_US' ? 'سنت / بوشل' : (commodityInfo?.unit || '---'),
         price: lastPrice,
         previous_price: firstPrice,
         change_value: changeValue,
@@ -1243,7 +1336,7 @@ const Reports: React.FC = () => {
         low: low === Infinity || low === 0 ? lastPrice : low,
         averagePrice,
         source: lastRow.source || commodityInfo?.source || '---',
-        trend: changePercent > 0 ? 'up' : changePercent < 0 ? 'down' : 'neutral',
+        trend: changePercent > 0 ? 'up' : changePercent < 0 ? 'down' : 'stable',
         analysis_status: changePercent > 5 ? 'ارتفاع قوي' : changePercent > 0.5 ? 'ارتفاع محدود' : changePercent < -5 ? 'انخفاض قوي' : changePercent < -0.5 ? 'انخفاض محدود' : 'استقرار'
       };
     });
@@ -1270,7 +1363,7 @@ const Reports: React.FC = () => {
         const currentPrice = Number(row.price || 0);
         const previousPrice = previousRow ? Number(previousRow.price || 0) : null;
 
-        const changeValue = previousPrice ? currentPrice - previousPrice : null;
+        const changeValue = previousPrice !== null ? currentPrice - previousPrice : null;
         const changePercent = previousPrice && previousPrice > 0
           ? ((currentPrice - previousPrice) / previousPrice) * 100
           : null;
@@ -1280,10 +1373,10 @@ const Reports: React.FC = () => {
         return {
           date: row.recorded_at || row.created_at,
           symbol: row.symbol,
-          name_ar: commodityInfo?.name_ar || row.symbol,
+          name_ar: commodityInfo?.name_ar || COMMODITY_NAME_MAP[row.symbol] || row.symbol,
           name_en: commodityInfo?.name_en || row.symbol,
           sector: commodityInfo?.sector || '---',
-          unit: commodityInfo?.unit || '---',
+          unit: row.symbol === 'WHEAT_US' ? 'سنت / بوشل' : (commodityInfo?.unit || '---'),
           price: currentPrice,
           previous_price: previousPrice,
           change_val: changeValue,
@@ -1292,9 +1385,9 @@ const Reports: React.FC = () => {
           low: row.low,
           source: row.source || commodityInfo?.source || '---',
           trend:
-            changePercent === null ? '---' :
+            changePercent === null ? 'stable' :
             changePercent > 0 ? 'up' :
-            changePercent < 0 ? 'down' : 'neutral'
+            changePercent < 0 ? 'down' : 'stable'
         };
       });
 
@@ -1305,7 +1398,7 @@ const Reports: React.FC = () => {
           items: []
         });
       } else {
-        const chunkSize = 20;
+        const chunkSize = 15;
         for (let i = 0; i < detailedTableData.length; i += chunkSize) {
           pagesData.push({
             type: 'detailed_table',
@@ -1325,7 +1418,7 @@ const Reports: React.FC = () => {
           items: []
         });
       } else {
-        const chunkSize = 25;
+        const chunkSize = 15;
         for (let i = 0; i < summaryTableData.length; i += chunkSize) {
           pagesData.push({
             type: 'summary_table',
@@ -1453,32 +1546,42 @@ const Reports: React.FC = () => {
 
   .report-table {
     width: 100%;
-    table-layout: auto;
+    table-layout: fixed;
     border-collapse: collapse;
-    font-size: 10px;
-    color: #475569; /* Base color applied to table */
+    font-size: 11px;
+    font-family: 'Cairo', sans-serif !important;
+    color: #0f172a;
+    line-height: 1.45;
   }
   
   .report-table th {
     background-color: #0A1128;
     color: #ffffff;
     text-align: center;
-    font-weight: bold;
-    padding: 8px 6px;
-    border: 1px solid #cbd5e1;
+    font-weight: 700;
+    padding: 8px 4px;
+    border: 1px solid #334155;
     font-size: 11px;
-    white-space: nowrap;
+    font-family: 'Cairo', sans-serif !important;
+    vertical-align: middle;
+    letter-spacing: 0 !important;
+    font-feature-settings: "liga" 1, "kern" 1;
+    -webkit-font-feature-settings: "liga" 1, "kern" 1;
   }
 
   .report-table td {
-    padding: 6px;
-    border: 1px solid #e2e8f0;
+    padding: 6px 4px;
+    border: 1px solid #cbd5e1;
     vertical-align: middle;
+    font-family: 'Cairo', sans-serif;
+    letter-spacing: 0 !important;
+    font-feature-settings: "liga" 1, "kern" 1;
+    -webkit-font-feature-settings: "liga" 1, "kern" 1;
   }
 
   /* Alternating rows */
   .report-table tbody tr:nth-child(even) {
-    background-color: #f8fafc; /* slate-50 */
+    background-color: #f8fafc;
   }
   .report-table tbody tr:nth-child(odd) {
     background-color: #ffffff;
@@ -1487,15 +1590,21 @@ const Reports: React.FC = () => {
   /* Numeric columns */
   .col-numeric {
     text-align: center;
-    font-family: monospace;
+    direction: ltr;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
+    font-variant-numeric: tabular-nums;
+    unicode-bidi: isolate;
     white-space: nowrap;
   }
 
   /* Text columns */
   .col-text {
     text-align: right;
+    direction: rtl;
     word-break: break-word;
+    overflow-wrap: break-word;
     white-space: normal;
+    letter-spacing: 0 !important;
   }
 `}</style>
 
@@ -2265,18 +2374,30 @@ const Reports: React.FC = () => {
                       الأرشيف التاريخي للسلعة {chunkIdx > 0 ? '(تابع)' : ''}
                     </h4>
                     <table className="report-table">
+                      <colgroup>
+                        <col style={{ width: '10%' }} />
+                        <col style={{ width: '10%' }} />
+                        <col style={{ width: '10%' }} />
+                        <col style={{ width: '9%' }} />
+                        <col style={{ width: '9%' }} />
+                        <col style={{ width: '9%' }} />
+                        <col style={{ width: '9%' }} />
+                        <col style={{ width: '9%' }} />
+                        <col style={{ width: '10%' }} />
+                        <col style={{ width: '15%' }} />
+                      </colgroup>
                       <thead>
                         <tr className="bg-[#0A1128] text-white">
-                          <th className="p-2 border border-slate-300">التاريخ</th>
-                          <th className="p-2 border border-slate-300">السعر</th>
-                          <th className="p-2 border border-slate-300">السابق</th>
-                          <th className="p-2 border border-slate-300">التغير</th>
-                          <th className="p-2 border border-slate-300">نسبة التغير</th>
-                          <th className="p-2 border border-slate-300">أعلى سعر</th>
-                          <th className="p-2 border border-slate-300">أقل سعر</th>
-                          <th className="p-2 border border-slate-300">المصدر</th>
-                          <th className="p-2 border border-slate-300">الاتجاه</th>
-                          <th className="p-2 border border-slate-300">ملاحظة تحليلية</th>
+                          <th className="p-2 border border-slate-400/30 text-center font-bold">التاريخ</th>
+                          <th className="p-2 border border-slate-400/30 text-center font-bold">السعر الحالي</th>
+                          <th className="p-2 border border-slate-400/30 text-center font-bold">السعر السابق</th>
+                          <th className="p-2 border border-slate-400/30 text-center font-bold">التغير المطلق</th>
+                          <th className="p-2 border border-slate-400/30 text-center font-bold">التغير النسبي (%)</th>
+                          <th className="p-2 border border-slate-400/30 text-center font-bold">أعلى سعر</th>
+                          <th className="p-2 border border-slate-400/30 text-center font-bold">أدنى سعر</th>
+                          <th className="p-2 border border-slate-400/30 text-center font-bold">المصدر</th>
+                          <th className="p-2 border border-slate-400/30 text-center font-bold">الاتجاه</th>
+                          <th className="p-2 border border-slate-400/30 text-center font-bold">ملاحظة تحليلية</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -2289,37 +2410,67 @@ const Reports: React.FC = () => {
                           
                           const isPositive = changePercent > 0;
                           const isNegative = changePercent < 0;
-                          const cpColor = isPositive ? 'text-green-600' : isNegative ? 'text-red-600' : 'text-slate-400';
+                          const cpColor = isPositive ? 'text-emerald-700 font-bold' : isNegative ? 'text-rose-700 font-bold' : 'text-slate-600 font-semibold';
+                          const cvColor = isPositive ? 'text-emerald-700' : isNegative ? 'text-rose-700' : 'text-slate-600';
                           const cpText = `${isPositive ? '+' : ''}${changePercent.toFixed(2)}%`;
+                          const cvText = `${changeValue > 0 ? '+' : ''}${Number(changeValue).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
                           
-                          let trend = 'stable';
-                          if (isPositive) trend = 'up';
-                          else if (isNegative) trend = 'down';
+                          let trendLabel = 'استقرار';
+                          let trendBadgeClass = 'text-slate-600 bg-slate-100 border-slate-200';
+                          let trendIcon = '—';
+                          if (isPositive) {
+                            trendLabel = 'ارتفاع';
+                            trendBadgeClass = 'text-emerald-700 bg-emerald-50 border-emerald-200';
+                            trendIcon = '▲';
+                          } else if (isNegative) {
+                            trendLabel = 'انخفاض';
+                            trendBadgeClass = 'text-rose-700 bg-rose-50 border-rose-200';
+                            trendIcon = '▼';
+                          }
 
                           let note = 'استقرار نسبي';
-                          if (changePercent > 5) note = 'ارتفاع قوي مقارنة بالسجل السابق';
-                          else if (changePercent > 0) note = 'ارتفاع مقارنة بالسجل السابق';
-                          else if (changePercent < -5) note = 'انخفاض قوي مقارنة بالسجل السابق';
-                          else if (changePercent < 0) note = 'انخفاض مقارنة بالسجل السابق';
+                          if (changePercent > 5) note = 'ارتفاع قوي مقارنة بالسابق';
+                          else if (changePercent > 0) note = 'ارتفاع مقارنة بالسابق';
+                          else if (changePercent < -5) note = 'انخفاض قوي مقارنة بالسابق';
+                          else if (changePercent < 0) note = 'انخفاض مقارنة بالسابق';
 
-                          if (Math.abs(changePercent) > 10) note = 'تذبذب ملحوظ في السعر';
+                          if (Math.abs(changePercent) > 10) note = 'تذبذب سعري ملحوظ';
 
                           return (
-                            <tr key={h.id || idx} className="even:bg-slate-50">
-                              <td className="p-2 border border-slate-200 font-mono text-xs text-slate-500" dir="ltr">{new Intl.DateTimeFormat('en-GB', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(h.recorded_at))}</td>
-                              <td className="p-2 border border-slate-200 font-mono font-bold text-[#1e3a8a]" dir="ltr">{Number(h.price).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                              <td className="p-2 border border-slate-200 font-mono text-slate-500" dir="ltr">{Number(prevPrice).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                              <td className={`p-2 border border-slate-200 font-mono ${cpColor}`} dir="ltr">{changeValue > 0 ? '+' : ''}{Number(changeValue).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                              <td className={`p-2 border border-slate-200 font-mono font-bold ${cpColor}`} dir="ltr">{cpText}</td>
-                              <td className="p-2 border border-slate-200 font-mono text-amber-700 bg-amber-50/30" dir="ltr">{h.high ? Number(h.high).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-'}</td>
-                              <td className="p-2 border border-slate-200 font-mono text-blue-700 bg-blue-50/30" dir="ltr">{h.low ? Number(h.low).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-'}</td>
-                              <td className="p-2 border border-slate-200 text-xs text-slate-600">{h.source || '-'}</td>
-                              <td className="p-2 border border-slate-200 text-center">
-                                <span className={trend === 'up' ? 'text-green-600 font-bold' : trend === 'down' ? 'text-red-600 font-bold' : 'text-slate-400 font-bold'}>
-                                  {trend === 'up' ? '▲' : trend === 'down' ? '▼' : '-'}
+                            <tr key={h.id || idx} className="even:bg-slate-50/80 hover:bg-blue-50/20 transition-colors">
+                              <td className="p-1.5 border border-slate-200 font-mono text-[11px] text-slate-600 text-center" dir="ltr" style={{ unicodeBidi: 'isolate' }}>
+                                {new Intl.DateTimeFormat('en-GB', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(h.recorded_at))}
+                              </td>
+                              <td className="p-1.5 border border-slate-200 font-mono font-black text-slate-900 text-center text-[11.5px]" dir="ltr" style={{ unicodeBidi: 'isolate' }}>
+                                {Number(h.price).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </td>
+                              <td className="p-1.5 border border-slate-200 font-mono text-slate-600 text-center text-[11px]" dir="ltr" style={{ unicodeBidi: 'isolate' }}>
+                                {Number(prevPrice).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </td>
+                              <td className={`p-1.5 border border-slate-200 font-mono text-center text-[11px] ${cvColor}`} dir="ltr" style={{ unicodeBidi: 'isolate' }}>
+                                {cvText}
+                              </td>
+                              <td className={`p-1.5 border border-slate-200 font-mono text-center text-[11.5px] ${cpColor}`} dir="ltr" style={{ unicodeBidi: 'isolate' }}>
+                                {cpText}
+                              </td>
+                              <td className="p-1.5 border border-slate-200 font-mono text-amber-800 bg-amber-50/20 text-center text-[11px]" dir="ltr" style={{ unicodeBidi: 'isolate' }}>
+                                {h.high ? Number(h.high).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}
+                              </td>
+                              <td className="p-1.5 border border-slate-200 font-mono text-blue-800 bg-blue-50/20 text-center text-[11px]" dir="ltr" style={{ unicodeBidi: 'isolate' }}>
+                                {h.low ? Number(h.low).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}
+                              </td>
+                              <td className="p-1.5 border border-slate-200 text-center text-[11px] font-semibold text-slate-700" dir="ltr" style={{ unicodeBidi: 'isolate' }}>
+                                {formatSourceDisplay(h.source)}
+                              </td>
+                              <td className="p-1.5 border border-slate-200 text-center">
+                                <span className={`inline-flex items-center justify-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold border ${trendBadgeClass}`}>
+                                  <span>{trendIcon}</span>
+                                  <span>{trendLabel}</span>
                                 </span>
                               </td>
-                              <td className="p-2 border border-slate-200 text-xs text-slate-600 font-medium">{note}</td>
+                              <td className="p-1.5 border border-slate-200 text-center text-[11px] font-medium text-slate-700" style={{ direction: 'rtl' }}>
+                                {note}
+                              </td>
                             </tr>
                           );
                         })}
@@ -2525,45 +2676,77 @@ const Reports: React.FC = () => {
                           </div>
                         ) : (
                           <table className="report-table">
+                            <colgroup>
+                              <col style={{ width: '8.2%' }} />  {/* 1. التاريخ */}
+                              <col style={{ width: '7.8%' }} />  {/* 2. رمز السلعة */}
+                              <col style={{ width: '15.5%' }} /> {/* 3. اسم السلعة */}
+                              <col style={{ width: '11.0%' }} /> {/* 4. القطاع */}
+                              <col style={{ width: '7.5%' }} />  {/* 5. السعر الحالي */}
+                              <col style={{ width: '7.5%' }} />  {/* 6. السعر السابق */}
+                              <col style={{ width: '7.0%' }} />  {/* 7. قيمة التغير */}
+                              <col style={{ width: '7.5%' }} />  {/* 8. نسبة التغير */}
+                              <col style={{ width: '7.0%' }} />  {/* 9. أعلى سعر */}
+                              <col style={{ width: '7.0%' }} />  {/* 10. أقل سعر */}
+                              <col style={{ width: '6.5%' }} />  {/* 11. المصدر */}
+                              <col style={{ width: '6.5%' }} />  {/* 12. الاتجاه */}
+                              <col style={{ width: '8.5%' }} />  {/* 13. قراءة مختصرة */}
+                            </colgroup>
                             <thead>
                               <tr className="bg-[#0A1128] text-white">
-                                <th className="p-1.5 border border-slate-300">التاريخ</th>
-                                <th className="p-1.5 border border-slate-300">الرمز</th>
-                                <th className="p-1.5 border border-slate-300">اسم السلعة</th>
-                                <th className="p-1.5 border border-slate-300">القطاع</th>
-                                <th className="p-1.5 border border-slate-300">السعر</th>
-                                <th className="p-1.5 border border-slate-300">السعر السابق</th>
-                                <th className="p-1.5 border border-slate-300">قيمة التغير</th>
-                                <th className="p-1.5 border border-slate-300">نسبة التغير %</th>
-                                <th className="p-1.5 border border-slate-300">أعلى سعر</th>
-                                <th className="p-1.5 border border-slate-300">أقل سعر</th>
-                                <th className="p-1.5 border border-slate-300">المصدر</th>
-                                <th className="p-1.5 border border-slate-300">الاتجاه</th>
-                                <th className="p-1.5 border border-slate-300">قراءة قصيرة</th>
+                                <th className="p-1.5 border border-slate-400/30 text-center font-bold">التاريخ</th>
+                                <th className="p-1.5 border border-slate-400/30 text-center font-bold">رمز السلعة</th>
+                                <th className="p-1.5 border border-slate-400/30 text-right font-bold pr-2">اسم السلعة</th>
+                                <th className="p-1.5 border border-slate-400/30 text-right font-bold pr-2">القطاع</th>
+                                <th className="p-1.5 border border-slate-400/30 text-center font-bold">السعر الحالي</th>
+                                <th className="p-1.5 border border-slate-400/30 text-center font-bold">السعر السابق</th>
+                                <th className="p-1.5 border border-slate-400/30 text-center font-bold">قيمة التغير</th>
+                                <th className="p-1.5 border border-slate-400/30 text-center font-bold">نسبة التغير</th>
+                                <th className="p-1.5 border border-slate-400/30 text-center font-bold">أعلى سعر</th>
+                                <th className="p-1.5 border border-slate-400/30 text-center font-bold">أقل سعر</th>
+                                <th className="p-1.5 border border-slate-400/30 text-center font-bold">المصدر</th>
+                                <th className="p-1.5 border border-slate-400/30 text-center font-bold">الاتجاه</th>
+                                <th className="p-1.5 border border-slate-400/30 text-center font-bold">قراءة مختصرة</th>
                               </tr>
                             </thead>
                             <tbody>
                               {pageData.items.map((item: any, itemIdx: number) => {
-                                const sectorName = sectors.find((s: any) => s.sector_code === item.sector)?.name_ar || item.sector || '-';
+                                const sectorName = getSectorArabicName(item.sector);
+                                const commName = getCommodityArabicName(item.symbol, item.name_ar);
+                                const sourceDisplay = formatSourceDisplay(item.source);
                                 
                                 const hasPrev = item.previous_price !== null && item.previous_price !== undefined;
                                 const changeValue = item.change_val;
                                 const changePercent = item.change_pct;
                                 
-                                const isPositive = changePercent > 0;
-                                const isNegative = changePercent < 0;
-                                const cpColor = isPositive ? 'text-green-600' : isNegative ? 'text-red-600' : 'text-slate-400';
-                                const cpText = hasPrev ? `${isPositive ? '+' : ''}${changePercent.toFixed(2)}%` : '---';
-                                const cvText = hasPrev ? `${changeValue > 0 ? '+' : ''}${Number(changeValue).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '---';
+                                const isPositive = changePercent !== null && changePercent > 0;
+                                const isNegative = changePercent !== null && changePercent < 0;
+                                const cpColor = isPositive ? 'text-emerald-700 font-bold' : isNegative ? 'text-rose-700 font-bold' : 'text-slate-600 font-semibold';
+                                const cvColor = isPositive ? 'text-emerald-700' : isNegative ? 'text-rose-700' : 'text-slate-600';
                                 
-                                let trend = 'stable';
-                                if (hasPrev) {
-                                  if (isPositive) trend = 'up';
-                                  else if (isNegative) trend = 'down';
+                                const cpText = hasPrev && changePercent !== null 
+                                  ? `${isPositive ? '+' : ''}${changePercent.toFixed(2)}%` 
+                                  : '—';
+                                const cvText = hasPrev && changeValue !== null 
+                                  ? `${changeValue > 0 ? '+' : ''}${Number(changeValue).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` 
+                                  : '—';
+                                
+                                let trendLabel = 'استقرار';
+                                let trendBadgeClass = 'text-slate-600 bg-slate-100 border-slate-200';
+                                let trendIcon = '—';
+                                if (hasPrev && changePercent !== null) {
+                                  if (changePercent > 0) {
+                                    trendLabel = 'ارتفاع';
+                                    trendBadgeClass = 'text-emerald-700 bg-emerald-50 border-emerald-200';
+                                    trendIcon = '▲';
+                                  } else if (changePercent < 0) {
+                                    trendLabel = 'انخفاض';
+                                    trendBadgeClass = 'text-rose-700 bg-rose-50 border-rose-200';
+                                    trendIcon = '▼';
+                                  }
                                 }
 
-                                let note = 'استقرار';
-                                if (hasPrev) {
+                                let note = 'استقرار نسبي';
+                                if (hasPrev && changePercent !== null) {
                                   if (changePercent > 5) note = 'ارتفاع قوي';
                                   else if (changePercent > 0.5) note = 'ارتفاع محدود';
                                   else if (changePercent < -5) note = 'انخفاض قوي';
@@ -2571,34 +2754,62 @@ const Reports: React.FC = () => {
                                 }
 
                                 return (
-                                  <tr key={`${item.symbol}-${item.date}-${itemIdx}`} className="even:bg-slate-50">
-                                    <td className="p-1 border border-slate-200 font-mono text-slate-500" dir="ltr">
+                                  <tr key={`${item.symbol}-${item.date}-${itemIdx}`} className="even:bg-slate-50/80 hover:bg-blue-50/20 transition-colors">
+                                    {/* 1. التاريخ */}
+                                    <td className="p-1.5 border border-slate-200 font-mono text-[11px] text-slate-600 text-center" dir="ltr" style={{ unicodeBidi: 'isolate' }}>
                                       {new Intl.DateTimeFormat('en-GB', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(item.date))}
                                     </td>
-                                    <td className="p-1 border border-slate-200 font-mono text-slate-500" dir="ltr">{item.symbol}</td>
-                                    <td className="p-1 border border-slate-200 font-bold text-[#1e3a8a] truncate max-w-[80px]">{item.name_ar}</td>
-                                    <td className="p-1 border border-slate-200 text-slate-600 truncate max-w-[60px]">{sectorName}</td>
-                                    <td className="p-1 border border-slate-200 font-mono font-bold text-[#1e3a8a]" dir="ltr">
+                                    {/* 2. رمز السلعة */}
+                                    <td className="p-1.5 border border-slate-200 font-mono font-bold text-[11px] text-slate-700 text-center" dir="ltr" style={{ unicodeBidi: 'isolate' }}>
+                                      {item.symbol}
+                                    </td>
+                                    {/* 3. اسم السلعة */}
+                                    <td className="p-1.5 border border-slate-200 font-bold text-slate-900 text-right leading-snug break-words" style={{ overflowWrap: 'break-word', wordBreak: 'break-word', whiteSpace: 'normal', direction: 'rtl' }}>
+                                      {commName}
+                                    </td>
+                                    {/* 4. القطاع */}
+                                    <td className="p-1.5 border border-slate-200 text-slate-700 text-right text-[11px] font-medium leading-snug break-words" style={{ overflowWrap: 'break-word', wordBreak: 'break-word', whiteSpace: 'normal', direction: 'rtl' }}>
+                                      {sectorName}
+                                    </td>
+                                    {/* 5. السعر الحالي */}
+                                    <td className="p-1.5 border border-slate-200 font-mono font-black text-slate-900 text-center text-[11.5px]" dir="ltr" style={{ unicodeBidi: 'isolate' }}>
                                       {Number(item.price).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                     </td>
-                                    <td className="p-1 border border-slate-200 font-mono text-slate-500" dir="ltr">
-                                      {hasPrev ? Number(item.previous_price).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '---'}
+                                    {/* 6. السعر السابق */}
+                                    <td className="p-1.5 border border-slate-200 font-mono text-slate-600 text-center text-[11px]" dir="ltr" style={{ unicodeBidi: 'isolate' }}>
+                                      {hasPrev ? Number(item.previous_price).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}
                                     </td>
-                                    <td className={`p-1 border border-slate-200 font-mono ${cpColor}`} dir="ltr">{cvText}</td>
-                                    <td className={`p-1 border border-slate-200 font-mono font-bold ${cpColor}`} dir="ltr">{cpText}</td>
-                                    <td className="p-1 border border-slate-200 font-mono text-amber-700 bg-amber-50/30" dir="ltr">
-                                      {item.high ? Number(item.high).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '---'}
+                                    {/* 7. قيمة التغير */}
+                                    <td className={`p-1.5 border border-slate-200 font-mono text-center text-[11px] ${cvColor}`} dir="ltr" style={{ unicodeBidi: 'isolate' }}>
+                                      {cvText}
                                     </td>
-                                    <td className="p-1 border border-slate-200 font-mono text-blue-700 bg-blue-50/30" dir="ltr">
-                                      {item.low ? Number(item.low).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '---'}
+                                    {/* 8. نسبة التغير */}
+                                    <td className={`p-1.5 border border-slate-200 font-mono text-center text-[11.5px] ${cpColor}`} dir="ltr" style={{ unicodeBidi: 'isolate' }}>
+                                      {cpText}
                                     </td>
-                                    <td className="p-1 border border-slate-200 text-slate-600 truncate max-w-[70px]">{item.source || '-'}</td>
-                                    <td className="p-1 border border-slate-200 text-center">
-                                      <span className={trend === 'up' ? 'text-green-600 font-bold' : trend === 'down' ? 'text-red-600 font-bold' : 'text-slate-400 font-bold'}>
-                                        {trend === 'up' ? '▲' : trend === 'down' ? '▼' : '-'}
+                                    {/* 9. أعلى سعر */}
+                                    <td className="p-1.5 border border-slate-200 font-mono text-amber-800 bg-amber-50/20 text-center text-[11px]" dir="ltr" style={{ unicodeBidi: 'isolate' }}>
+                                      {item.high ? Number(item.high).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}
+                                    </td>
+                                    {/* 10. أقل سعر */}
+                                    <td className="p-1.5 border border-slate-200 font-mono text-blue-800 bg-blue-50/20 text-center text-[11px]" dir="ltr" style={{ unicodeBidi: 'isolate' }}>
+                                      {item.low ? Number(item.low).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}
+                                    </td>
+                                    {/* 11. المصدر */}
+                                    <td className="p-1.5 border border-slate-200 text-center text-[11px] font-semibold text-slate-700" dir="ltr" style={{ unicodeBidi: 'isolate' }}>
+                                      {sourceDisplay}
+                                    </td>
+                                    {/* 12. الاتجاه */}
+                                    <td className="p-1.5 border border-slate-200 text-center">
+                                      <span className={`inline-flex items-center justify-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold border ${trendBadgeClass}`}>
+                                        <span>{trendIcon}</span>
+                                        <span>{trendLabel}</span>
                                       </span>
                                     </td>
-                                    <td className="p-1 border border-slate-200 font-medium text-slate-600">{note}</td>
+                                    {/* 13. قراءة مختصرة */}
+                                    <td className="p-1.5 border border-slate-200 text-center text-[11px] font-semibold text-slate-700" style={{ direction: 'rtl' }}>
+                                      {note}
+                                    </td>
                                   </tr>
                                 );
                               })}
@@ -2627,67 +2838,107 @@ const Reports: React.FC = () => {
                           </div>
                         ) : (
                           <table className="report-table">
+                            <colgroup>
+                              <col style={{ width: '7.5%' }} />  {/* الرمز */}
+                              <col style={{ width: '15.5%' }} /> {/* اسم السلعة */}
+                              <col style={{ width: '11.0%' }} /> {/* القطاع */}
+                              <col style={{ width: '7.0%' }} />  {/* الوحدة */}
+                              <col style={{ width: '7.5%' }} />  {/* السعر الأول */}
+                              <col style={{ width: '7.5%' }} />  {/* السعر الحالي */}
+                              <col style={{ width: '7.0%' }} />  {/* التغير المطلق */}
+                              <col style={{ width: '7.5%' }} />  {/* نسبة التغير % */}
+                              <col style={{ width: '6.5%' }} />  {/* أعلى سعر */}
+                              <col style={{ width: '6.5%' }} />  {/* أدنى سعر */}
+                              <col style={{ width: '6.5%' }} />  {/* المتوسط */}
+                              <col style={{ width: '6.5%' }} />  {/* المصدر */}
+                              <col style={{ width: '6.5%' }} />  {/* الاتجاه */}
+                              <col style={{ width: '7.0%' }} />  {/* التحليل */}
+                            </colgroup>
                             <thead>
                               <tr className="bg-[#0A1128] text-white">
-                                <th className="p-1.5 border border-slate-300">الرمز</th>
-                                <th className="p-1.5 border border-slate-300">اسم السلعة</th>
-                                <th className="p-1.5 border border-slate-300">القطاع</th>
-                                <th className="p-1.5 border border-slate-300">الوحدة</th>
-                                <th className="p-1.5 border border-slate-300">السعر الأول</th>
-                                <th className="p-1.5 border border-slate-300">السعر الأخير</th>
-                                <th className="p-1.5 border border-slate-300">التغير</th>
-                                <th className="p-1.5 border border-slate-300">نسبة التغير %</th>
-                                <th className="p-1.5 border border-slate-300">أعلى سعر</th>
-                                <th className="p-1.5 border border-slate-300">أقل سعر</th>
-                                <th className="p-1.5 border border-slate-300">المتوسط</th>
-                                <th className="p-1.5 border border-slate-300">المصدر</th>
-                                <th className="p-1.5 border border-slate-300">الاتجاه</th>
-                                <th className="p-1.5 border border-slate-300">التحليل</th>
+                                <th className="p-1.5 border border-slate-400/30 text-center font-bold">الرمز</th>
+                                <th className="p-1.5 border border-slate-400/30 text-right font-bold pr-2">اسم السلعة</th>
+                                <th className="p-1.5 border border-slate-400/30 text-right font-bold pr-2">القطاع</th>
+                                <th className="p-1.5 border border-slate-400/30 text-center font-bold">الوحدة</th>
+                                <th className="p-1.5 border border-slate-400/30 text-center font-bold">السعر الأول</th>
+                                <th className="p-1.5 border border-slate-400/30 text-center font-bold">السعر الحالي</th>
+                                <th className="p-1.5 border border-slate-400/30 text-center font-bold">التغير المطلق</th>
+                                <th className="p-1.5 border border-slate-400/30 text-center font-bold">نسبة التغير %</th>
+                                <th className="p-1.5 border border-slate-400/30 text-center font-bold">أعلى سعر</th>
+                                <th className="p-1.5 border border-slate-400/30 text-center font-bold">أدنى سعر</th>
+                                <th className="p-1.5 border border-slate-400/30 text-center font-bold">المتوسط</th>
+                                <th className="p-1.5 border border-slate-400/30 text-center font-bold">المصدر</th>
+                                <th className="p-1.5 border border-slate-400/30 text-center font-bold">الاتجاه</th>
+                                <th className="p-1.5 border border-slate-400/30 text-center font-bold">التحليل</th>
                               </tr>
                             </thead>
                             <tbody>
                               {pageData.items.map((item: any, itemIdx: number) => {
-                                const sectorName = sectors.find((s: any) => s.sector_code === item.sector)?.name_ar || item.sector || '-';
+                                const sectorName = getSectorArabicName(item.sector);
+                                const commName = getCommodityArabicName(item.symbol, item.name_ar);
+                                const sourceDisplay = formatSourceDisplay(item.source);
                                 
                                 const changeValue = item.change_value;
                                 const changePercent = item.change_percent;
                                 
-                                const isPositive = changePercent > 0;
-                                const isNegative = changePercent < 0;
-                                const cpColor = isPositive ? 'text-green-600' : isNegative ? 'text-red-600' : 'text-slate-400';
-                                const cpText = `${isPositive ? '+' : ''}${changePercent.toFixed(2)}%`;
-                                const cvText = `${changeValue > 0 ? '+' : ''}${Number(changeValue).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                                const isPositive = changePercent !== null && changePercent > 0;
+                                const isNegative = changePercent !== null && changePercent < 0;
+                                const cpColor = isPositive ? 'text-emerald-700 font-bold' : isNegative ? 'text-rose-700 font-bold' : 'text-slate-600 font-semibold';
+                                const cvColor = isPositive ? 'text-emerald-700' : isNegative ? 'text-rose-700' : 'text-slate-600';
+                                
+                                const cpText = changePercent !== null 
+                                  ? `${isPositive ? '+' : ''}${changePercent.toFixed(2)}%` 
+                                  : '—';
+                                const cvText = changeValue !== null 
+                                  ? `${changeValue > 0 ? '+' : ''}${Number(changeValue).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` 
+                                  : '—';
+
+                                let trendLabel = 'استقرار';
+                                let trendBadgeClass = 'text-slate-600 bg-slate-100 border-slate-200';
+                                let trendIcon = '—';
+                                if (changePercent !== null) {
+                                  if (changePercent > 0) {
+                                    trendLabel = 'ارتفاع';
+                                    trendBadgeClass = 'text-emerald-700 bg-emerald-50 border-emerald-200';
+                                    trendIcon = '▲';
+                                  } else if (changePercent < 0) {
+                                    trendLabel = 'انخفاض';
+                                    trendBadgeClass = 'text-rose-700 bg-rose-50 border-rose-200';
+                                    trendIcon = '▼';
+                                  }
+                                }
 
                                 return (
-                                  <tr key={`${item.symbol}-${itemIdx}`} className="even:bg-slate-50">
-                                    <td className="p-1 border border-slate-200 font-mono text-slate-500" dir="ltr">{item.symbol}</td>
-                                    <td className="p-1 border border-slate-200 font-bold text-[#1e3a8a] truncate max-w-[80px]">{item.name_ar}</td>
-                                    <td className="p-1 border border-slate-200 text-slate-600 truncate max-w-[60px]">{sectorName}</td>
-                                    <td className="p-1 border border-slate-200 text-slate-500 font-mono" dir="ltr">{item.unit}</td>
-                                    <td className="p-1 border border-slate-200 font-mono text-slate-500" dir="ltr">
+                                  <tr key={`${item.symbol}-${itemIdx}`} className="even:bg-slate-50/80 hover:bg-blue-50/20 transition-colors">
+                                    <td className="p-1.5 border border-slate-200 font-mono font-bold text-[11px] text-slate-700 text-center" dir="ltr" style={{ unicodeBidi: 'isolate' }}>{item.symbol}</td>
+                                    <td className="p-1.5 border border-slate-200 font-bold text-slate-900 text-right leading-snug break-words" style={{ overflowWrap: 'break-word', wordBreak: 'break-word', whiteSpace: 'normal', direction: 'rtl' }}>{commName}</td>
+                                    <td className="p-1.5 border border-slate-200 text-slate-700 text-right text-[11px] font-medium leading-snug break-words" style={{ overflowWrap: 'break-word', wordBreak: 'break-word', whiteSpace: 'normal', direction: 'rtl' }}>{sectorName}</td>
+                                    <td className="p-1.5 border border-slate-200 text-slate-600 text-center text-[10.5px] font-medium" style={{ direction: 'rtl' }}>{item.unit}</td>
+                                    <td className="p-1.5 border border-slate-200 font-mono text-slate-600 text-center text-[11px]" dir="ltr" style={{ unicodeBidi: 'isolate' }}>
                                       {Number(item.previous_price).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                     </td>
-                                    <td className="p-1 border border-slate-200 font-mono font-bold text-[#1e3a8a]" dir="ltr">
+                                    <td className="p-1.5 border border-slate-200 font-mono font-black text-slate-900 text-center text-[11.5px]" dir="ltr" style={{ unicodeBidi: 'isolate' }}>
                                       {Number(item.price).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                     </td>
-                                    <td className={`p-1 border border-slate-200 font-mono ${cpColor}`} dir="ltr">{cvText}</td>
-                                    <td className={`p-1 border border-slate-200 font-mono font-bold ${cpColor}`} dir="ltr">{cpText}</td>
-                                    <td className="p-1 border border-slate-200 font-mono text-amber-700 bg-amber-50/30" dir="ltr">
-                                      {item.high ? Number(item.high).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '---'}
+                                    <td className={`p-1.5 border border-slate-200 font-mono text-center text-[11px] ${cvColor}`} dir="ltr" style={{ unicodeBidi: 'isolate' }}>{cvText}</td>
+                                    <td className={`p-1.5 border border-slate-200 font-mono text-center text-[11.5px] ${cpColor}`} dir="ltr" style={{ unicodeBidi: 'isolate' }}>{cpText}</td>
+                                    <td className="p-1.5 border border-slate-200 font-mono text-amber-800 bg-amber-50/20 text-center text-[11px]" dir="ltr" style={{ unicodeBidi: 'isolate' }}>
+                                      {item.high ? Number(item.high).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}
                                     </td>
-                                    <td className="p-1 border border-slate-200 font-mono text-blue-700 bg-blue-50/30" dir="ltr">
-                                      {item.low ? Number(item.low).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '---'}
+                                    <td className="p-1.5 border border-slate-200 font-mono text-blue-800 bg-blue-50/20 text-center text-[11px]" dir="ltr" style={{ unicodeBidi: 'isolate' }}>
+                                      {item.low ? Number(item.low).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}
                                     </td>
-                                    <td className="p-1 border border-slate-200 font-mono text-slate-600" dir="ltr">
+                                    <td className="p-1.5 border border-slate-200 font-mono text-slate-600 text-center text-[11px]" dir="ltr" style={{ unicodeBidi: 'isolate' }}>
                                       {Number(item.averagePrice).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                     </td>
-                                    <td className="p-1 border border-slate-200 text-slate-600 truncate max-w-[70px]">{item.source || '-'}</td>
-                                    <td className="p-1 border border-slate-200 text-center">
-                                      <span className={item.trend === 'up' ? 'text-green-600 font-bold' : item.trend === 'down' ? 'text-red-600 font-bold' : 'text-slate-400 font-bold'}>
-                                        {item.trend === 'up' ? '▲' : item.trend === 'down' ? '▼' : '-'}
+                                    <td className="p-1.5 border border-slate-200 text-center text-[11px] font-semibold text-slate-700" dir="ltr" style={{ unicodeBidi: 'isolate' }}>{sourceDisplay}</td>
+                                    <td className="p-1.5 border border-slate-200 text-center">
+                                      <span className={`inline-flex items-center justify-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold border ${trendBadgeClass}`}>
+                                        <span>{trendIcon}</span>
+                                        <span>{trendLabel}</span>
                                       </span>
                                     </td>
-                                    <td className="p-1 border border-slate-200 font-medium text-slate-600">{item.analysis_status}</td>
+                                    <td className="p-1.5 border border-slate-200 text-center text-[11px] font-medium text-slate-700" style={{ direction: 'rtl' }}>{item.analysis_status}</td>
                                   </tr>
                                 );
                               })}
@@ -2698,9 +2949,9 @@ const Reports: React.FC = () => {
                     ) : (
                       <>
                         <h4 className="text-lg font-bold text-[#1e3a8a] mb-4 border-r-4 border-[#b45309] pr-3 bg-slate-50 py-2 flex items-center justify-between">
-                          <span>جدول السلع - {pageData.sectorName} {pageData.isFirstChunk ? '' : '(تابع)'}</span>
+                          <span>جدول السلع - {getSectorArabicName(pageData.sectorName)} {pageData.isFirstChunk ? '' : '(تابع)'}</span>
                           {reportStartDate && reportEndDate && (
-                            <span className="text-sm font-normal text-slate-500 font-mono" dir="ltr">
+                            <span className="text-sm font-normal text-slate-500 font-mono" dir="ltr" style={{ unicodeBidi: 'isolate' }}>
                               {new Intl.DateTimeFormat('en-GB', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(reportStartDate))} - {new Intl.DateTimeFormat('en-GB', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(reportEndDate))}
                             </span>
                           )}
@@ -2708,11 +2959,15 @@ const Reports: React.FC = () => {
 
                         {pageData.isFirstChunk && detailLevel === 'comprehensive_economic' && pageData.analysis && (
                           <div className="mb-6 p-4 bg-blue-50/50 border border-blue-100 rounded-lg">
-                            <h5 className="font-bold text-[#1e3a8a] mb-2 text-sm">ملخص قطاع {pageData.sectorName}</h5>
-                            <p className="text-sm text-slate-700 leading-relaxed">
-                              تشير بيانات هذا القطاع خلال الفترة المحددة إلى أن متوسط التغير بلغ <span dir="ltr" className="font-bold">{pageData.analysis.avgCp > 0 ? '+' : ''}{pageData.analysis.avgCp.toFixed(2)}%</span>، 
-                              {pageData.analysis.topGainer ? ` مع تسجيل أعلى ارتفاع في سلعة ${pageData.analysis.topGainer.name_ar} بنسبة ${pageData.analysis.topGainer.period_change_percent.toFixed(2)}%،` : ''}
-                              {pageData.analysis.topLoser ? ` بينما سجلت سلعة ${pageData.analysis.topLoser.name_ar} أكبر انخفاض بنسبة ${pageData.analysis.topLoser.period_change_percent.toFixed(2)}%.` : '.'}
+                            <h5 className="font-bold text-[#1e3a8a] mb-2 text-sm">ملخص قطاع {getSectorArabicName(pageData.sectorName)}</h5>
+                            <p className="text-sm text-slate-700 leading-relaxed" style={{ direction: 'rtl' }}>
+                              تشير بيانات هذا القطاع خلال الفترة المحددة إلى أن متوسط التغير بلغ <span dir="ltr" style={{ unicodeBidi: 'isolate' }} className="font-bold">{pageData.analysis.avgCp > 0 ? '+' : ''}{pageData.analysis.avgCp.toFixed(2)}%</span>، 
+                              {pageData.analysis.topGainer ? ` مع تسجيل أعلى ارتفاع في سلعة ${getCommodityArabicName(pageData.analysis.topGainer.symbol, pageData.analysis.topGainer.name_ar)} بنسبة ` : ''}
+                              {pageData.analysis.topGainer && <span dir="ltr" style={{ unicodeBidi: 'isolate' }} className="font-bold text-emerald-700">+{pageData.analysis.topGainer.period_change_percent.toFixed(2)}%</span>}
+                              {pageData.analysis.topGainer ? '،' : ''}
+                              {pageData.analysis.topLoser ? ` بينما سجلت سلعة ${getCommodityArabicName(pageData.analysis.topLoser.symbol, pageData.analysis.topLoser.name_ar)} أكبر انخفاض بنسبة ` : ''}
+                              {pageData.analysis.topLoser && <span dir="ltr" style={{ unicodeBidi: 'isolate' }} className="font-bold text-rose-700">{pageData.analysis.topLoser.period_change_percent.toFixed(2)}%</span>}
+                              {pageData.analysis.topLoser ? '.' : '.'}
                               {pageData.analysis.mostVolatile ? ` ويعكس نطاق الأسعار مستوى تذبذب ${pageData.analysis.mostVolatile.analysis_status} خلال الفترة.` : ''}
                             </p>
                           </div>
@@ -2721,26 +2976,26 @@ const Reports: React.FC = () => {
                         <table className="report-table">
                           <thead>
                             <tr className="bg-[#0A1128] text-white">
-                              <th className="p-2 border border-slate-300">الرمز</th>
-                              <th className="p-2 border border-slate-300">السلعة</th>
-                              {detailLevel !== 'brief' && <th className="p-2 border border-slate-300">{(reportType !== 'daily') ? 'آخر سعر' : 'السعر'}</th>}
-                              {detailLevel !== 'brief' && <th className="p-2 border border-slate-300">{(reportType !== 'daily') ? 'أول سعر' : 'السابق'}</th>}
-                              {detailLevel === 'brief' && <th className="p-2 border border-slate-300">{(reportType !== 'daily') ? 'آخر سعر' : 'السعر'}</th>}
-                              <th className="p-2 border border-slate-300">التغير</th>
+                              <th className="p-2 border border-slate-300 text-center font-bold">الرمز</th>
+                              <th className="p-2 border border-slate-300 text-right font-bold pr-2">السلعة</th>
+                              {detailLevel !== 'brief' && <th className="p-2 border border-slate-300 text-center font-bold">{(reportType !== 'daily') ? 'آخر سعر' : 'السعر الحالي'}</th>}
+                              {detailLevel !== 'brief' && <th className="p-2 border border-slate-300 text-center font-bold">{(reportType !== 'daily') ? 'أول سعر' : 'السعر السابق'}</th>}
+                              {detailLevel === 'brief' && <th className="p-2 border border-slate-300 text-center font-bold">{(reportType !== 'daily') ? 'آخر سعر' : 'السعر الحالي'}</th>}
+                              <th className="p-2 border border-slate-300 text-center font-bold">التغير (%)</th>
                               {(detailLevel === 'detailed' || detailLevel === 'analytical' || detailLevel === 'comprehensive_economic') && (
                                 <>
-                                  <th className="p-2 border border-slate-300">أعلى سعر</th>
-                                  <th className="p-2 border border-slate-300">أقل سعر</th>
+                                  <th className="p-2 border border-slate-300 text-center font-bold">أعلى سعر</th>
+                                  <th className="p-2 border border-slate-300 text-center font-bold">أدنى سعر</th>
                                 </>
                               )}
                               {(detailLevel === 'analytical' || detailLevel === 'comprehensive_economic') && (
                                 <>
-                                  <th className="p-2 border border-slate-300">{(reportType !== 'daily') ? 'متوسط السعر' : 'المتوسط'}</th>
-                                  <th className="p-2 border border-slate-300">التذبذب</th>
-                                  <th className="p-2 border border-slate-300">تحليل</th>
+                                  <th className="p-2 border border-slate-300 text-center font-bold">{(reportType !== 'daily') ? 'متوسط السعر' : 'المتوسط'}</th>
+                                  <th className="p-2 border border-slate-300 text-center font-bold">التذبذب</th>
+                                  <th className="p-2 border border-slate-300 text-center font-bold">التحليل</th>
                                 </>
                               )}
-                              <th className="p-2 border border-slate-300">الاتجاه</th>
+                              <th className="p-2 border border-slate-300 text-center font-bold">الاتجاه</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -2761,13 +3016,27 @@ const Reports: React.FC = () => {
                               
                               const isPositive = analysis.change_percent > 0;
                               const isNegative = analysis.change_percent < 0;
-                              const cpColor = isPositive ? 'text-green-600' : isNegative ? 'text-red-600' : 'text-slate-400';
+                              const cpColor = isPositive ? 'text-emerald-700 font-bold' : isNegative ? 'text-rose-700 font-bold' : 'text-slate-600 font-semibold';
                               const cpText = `${isPositive ? '+' : ''}${analysis.change_percent.toFixed(2)}%`;
+                              const commArabicName = getCommodityArabicName(item.symbol, item.name_ar);
+
+                              let trendLabel = 'استقرار';
+                              let trendBadgeClass = 'text-slate-600 bg-slate-100 border-slate-200';
+                              let trendIcon = '—';
+                              if (analysis.trend === 'up' || isPositive) {
+                                trendLabel = 'ارتفاع';
+                                trendBadgeClass = 'text-emerald-700 bg-emerald-50 border-emerald-200';
+                                trendIcon = '▲';
+                              } else if (analysis.trend === 'down' || isNegative) {
+                                trendLabel = 'انخفاض';
+                                trendBadgeClass = 'text-rose-700 bg-rose-50 border-rose-200';
+                                trendIcon = '▼';
+                              }
 
                               return (
-                                <tr key={item.symbol} className="even:bg-slate-50">
-                                  <td className="p-2 border border-slate-200 font-mono text-xs text-slate-500" dir="ltr">{item.symbol}</td>
-                                  <td className="p-2 border border-slate-200 font-bold text-[#1e3a8a]">{item.name_ar}</td>
+                                <tr key={item.symbol} className="even:bg-slate-50/80 hover:bg-blue-50/20 transition-colors">
+                                  <td className="p-2 border border-slate-200 font-mono text-xs text-slate-700 text-center font-bold" dir="ltr" style={{ unicodeBidi: 'isolate' }}>{item.symbol}</td>
+                                  <td className="p-2 border border-slate-200 font-bold text-slate-900 text-right leading-snug break-words" style={{ overflowWrap: 'break-word', wordBreak: 'break-word', whiteSpace: 'normal', direction: 'rtl' }}>{commArabicName}</td>
                                   
                                   {!analysis.hasData && reportType !== 'daily' ? (
                                     <td colSpan={detailLevel === 'brief' ? 3 : detailLevel === 'comprehensive_economic' || detailLevel === 'analytical' ? 8 : 6} className="p-2 border border-slate-200 text-center text-slate-400 font-medium bg-slate-50">
@@ -2775,29 +3044,30 @@ const Reports: React.FC = () => {
                                     </td>
                                   ) : (
                                     <>
-                                      {detailLevel !== 'brief' && <td className="p-2 border border-slate-200 font-mono font-bold" dir="ltr">{Number(analysis.price || item.price).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>}
-                                      {detailLevel !== 'brief' && <td className="p-2 border border-slate-200 font-mono text-slate-500" dir="ltr">{Number(analysis.previous_price || item.previous_price || item.price).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>}
-                                      {detailLevel === 'brief' && <td className="p-2 border border-slate-200 font-mono font-bold" dir="ltr">{Number(analysis.price || item.price).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>}
-                                      <td className={`p-2 border border-slate-200 font-mono font-bold ${cpColor}`} dir="ltr">{cpText}</td>
+                                      {detailLevel !== 'brief' && <td className="p-2 border border-slate-200 font-mono font-black text-slate-900 text-center" dir="ltr" style={{ unicodeBidi: 'isolate' }}>{Number(analysis.price || item.price).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>}
+                                      {detailLevel !== 'brief' && <td className="p-2 border border-slate-200 font-mono text-slate-600 text-center" dir="ltr" style={{ unicodeBidi: 'isolate' }}>{Number(analysis.previous_price || item.previous_price || item.price).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>}
+                                      {detailLevel === 'brief' && <td className="p-2 border border-slate-200 font-mono font-black text-slate-900 text-center" dir="ltr" style={{ unicodeBidi: 'isolate' }}>{Number(analysis.price || item.price).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>}
+                                      <td className={`p-2 border border-slate-200 font-mono text-center ${cpColor}`} dir="ltr" style={{ unicodeBidi: 'isolate' }}>{cpText}</td>
                                       
                                       {(detailLevel === 'detailed' || detailLevel === 'analytical' || detailLevel === 'comprehensive_economic') && (
                                         <>
-                                          <td className="p-2 border border-slate-200 font-mono text-amber-700 bg-amber-50/30" dir="ltr">{Number(analysis.maxPrice).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                                          <td className="p-2 border border-slate-200 font-mono text-blue-700 bg-blue-50/30" dir="ltr">{Number(analysis.minPrice).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                          <td className="p-2 border border-slate-200 font-mono text-amber-800 bg-amber-50/20 text-center" dir="ltr" style={{ unicodeBidi: 'isolate' }}>{Number(analysis.maxPrice).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                          <td className="p-2 border border-slate-200 font-mono text-blue-800 bg-blue-50/20 text-center" dir="ltr" style={{ unicodeBidi: 'isolate' }}>{Number(analysis.minPrice).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                                         </>
                                       )}
                                       
                                       {(detailLevel === 'analytical' || detailLevel === 'comprehensive_economic') && (
                                         <>
-                                          <td className="p-2 border border-slate-200 font-mono" dir="ltr">{Number(analysis.averagePrice).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                                          <td className={`p-2 border border-slate-200 font-mono ${analysis.volatility_percent > 10 ? 'text-orange-600 font-bold' : ''}`} dir="ltr">{analysis.volatility_percent.toFixed(2)}%</td>
-                                          <td className="p-2 border border-slate-200 text-xs">{analysis.analysis_status}</td>
+                                          <td className="p-2 border border-slate-200 font-mono text-slate-700 text-center" dir="ltr" style={{ unicodeBidi: 'isolate' }}>{Number(analysis.averagePrice).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                          <td className={`p-2 border border-slate-200 font-mono text-center ${analysis.volatility_percent > 10 ? 'text-orange-700 font-bold' : 'text-slate-600'}`} dir="ltr" style={{ unicodeBidi: 'isolate' }}>{analysis.volatility_percent.toFixed(2)}%</td>
+                                          <td className="p-2 border border-slate-200 text-xs text-center text-slate-700 font-medium" style={{ direction: 'rtl' }}>{analysis.analysis_status}</td>
                                         </>
                                       )}
                                       
                                       <td className="p-2 border border-slate-200 text-center">
-                                        <span className={analysis.trend === 'up' ? 'text-green-600 font-bold' : analysis.trend === 'down' ? 'text-red-600 font-bold' : 'text-slate-400 font-bold'}>
-                                          {analysis.trend === 'up' ? '▲' : analysis.trend === 'down' ? '▼' : '-'}
+                                        <span className={`inline-flex items-center justify-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold border ${trendBadgeClass}`}>
+                                          <span>{trendIcon}</span>
+                                          <span>{trendLabel}</span>
                                         </span>
                                       </td>
                                     </>
@@ -2838,26 +3108,37 @@ const Reports: React.FC = () => {
 
                   <div className="relative z-10">
                     <h4 className="text-lg font-bold text-[#1e3a8a] mb-4 border-r-4 border-[#b45309] pr-3 bg-slate-50 py-2 flex items-center justify-between">
-                      <span>السجلات اليومية: {pageData.name_ar} ({pageData.symbol}) {pageData.isFirstChunk ? '' : '(تابع)'}</span>
+                      <span>السجلات اليومية: {getCommodityArabicName(pageData.symbol, pageData.name_ar)} ({pageData.symbol}) {pageData.isFirstChunk ? '' : '(تابع)'}</span>
                       {reportStartDate && reportEndDate && (
-                        <span className="text-sm font-normal text-slate-500 font-mono" dir="ltr">
+                        <span className="text-sm font-normal text-slate-500 font-mono" dir="ltr" style={{ unicodeBidi: 'isolate' }}>
                           {new Intl.DateTimeFormat('en-GB', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(reportStartDate))} - {new Intl.DateTimeFormat('en-GB', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(reportEndDate))}
                         </span>
                       )}
                     </h4>
 
-                    <table className="report-table">
+                    <table className="report-table" style={{ tableLayout: 'fixed', width: '100%' }}>
+                      <colgroup>
+                        <col style={{ width: '12%' }} />  {/* التاريخ */}
+                        <col style={{ width: '12%' }} />  {/* السعر الحالي */}
+                        <col style={{ width: '12%' }} />  {/* السعر السابق */}
+                        <col style={{ width: '11%' }} />  {/* التغير المطلق */}
+                        <col style={{ width: '11%' }} />  {/* نسبة التغير */}
+                        <col style={{ width: '11%' }} />  {/* أعلى سعر */}
+                        <col style={{ width: '11%' }} />  {/* أدنى سعر */}
+                        <col style={{ width: '10%' }} />  {/* المصدر */}
+                        <col style={{ width: '10%' }} />  {/* الاتجاه */}
+                      </colgroup>
                       <thead>
                         <tr className="bg-[#0A1128] text-white">
-                          <th className="p-2 border border-slate-300">التاريخ</th>
-                          <th className="p-2 border border-slate-300">السعر</th>
-                          <th className="p-2 border border-slate-300">السابق</th>
-                          <th className="p-2 border border-slate-300">التغير</th>
-                          <th className="p-2 border border-slate-300">النسبة</th>
-                          <th className="p-2 border border-slate-300">أعلى سعر</th>
-                          <th className="p-2 border border-slate-300">أقل سعر</th>
-                          <th className="p-2 border border-slate-300">المصدر</th>
-                          <th className="p-2 border border-slate-300">الاتجاه</th>
+                          <th className="p-2 border border-slate-300 text-center font-bold">التاريخ</th>
+                          <th className="p-2 border border-slate-300 text-center font-bold">السعر الحالي</th>
+                          <th className="p-2 border border-slate-300 text-center font-bold">السعر السابق</th>
+                          <th className="p-2 border border-slate-300 text-center font-bold">التغير المطلق</th>
+                          <th className="p-2 border border-slate-300 text-center font-bold">نسبة التغير %</th>
+                          <th className="p-2 border border-slate-300 text-center font-bold">أعلى سعر</th>
+                          <th className="p-2 border border-slate-300 text-center font-bold">أدنى سعر</th>
+                          <th className="p-2 border border-slate-300 text-center font-bold">المصدر</th>
+                          <th className="p-2 border border-slate-300 text-center font-bold">الاتجاه</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -2870,26 +3151,39 @@ const Reports: React.FC = () => {
                           
                           const isPositive = changePercent > 0;
                           const isNegative = changePercent < 0;
-                          const cpColor = isPositive ? 'text-green-600' : isNegative ? 'text-red-600' : 'text-slate-400';
+                          const cpColor = isPositive ? 'text-emerald-700 font-bold' : isNegative ? 'text-rose-700 font-bold' : 'text-slate-600 font-semibold';
+                          const cvColor = isPositive ? 'text-emerald-700' : isNegative ? 'text-rose-700' : 'text-slate-600';
                           const cpText = `${isPositive ? '+' : ''}${changePercent.toFixed(2)}%`;
-                          
-                          let trend = 'stable';
-                          if (isPositive) trend = 'up';
-                          else if (isNegative) trend = 'down';
+                          const cvText = `${changeValue > 0 ? '+' : ''}${Number(changeValue).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                          const sourceDisplay = formatSourceDisplay(h.source);
+
+                          let trendLabel = 'استقرار';
+                          let trendBadgeClass = 'text-slate-600 bg-slate-100 border-slate-200';
+                          let trendIcon = '—';
+                          if (isPositive) {
+                            trendLabel = 'ارتفاع';
+                            trendBadgeClass = 'text-emerald-700 bg-emerald-50 border-emerald-200';
+                            trendIcon = '▲';
+                          } else if (isNegative) {
+                            trendLabel = 'انخفاض';
+                            trendBadgeClass = 'text-rose-700 bg-rose-50 border-rose-200';
+                            trendIcon = '▼';
+                          }
 
                           return (
-                            <tr key={h.id || idx} className="even:bg-slate-50">
-                              <td className="p-2 border border-slate-200 font-mono text-xs text-slate-500" dir="ltr">{new Intl.DateTimeFormat('en-GB', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(h.recorded_at))}</td>
-                              <td className="p-2 border border-slate-200 font-mono font-bold text-[#1e3a8a]" dir="ltr">{Number(h.price).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                              <td className="p-2 border border-slate-200 font-mono text-slate-500" dir="ltr">{Number(prevPrice).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                              <td className={`p-2 border border-slate-200 font-mono ${cpColor}`} dir="ltr">{changeValue > 0 ? '+' : ''}{Number(changeValue).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                              <td className={`p-2 border border-slate-200 font-mono font-bold ${cpColor}`} dir="ltr">{cpText}</td>
-                              <td className="p-2 border border-slate-200 font-mono text-amber-700 bg-amber-50/30" dir="ltr">{h.high ? Number(h.high).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-'}</td>
-                              <td className="p-2 border border-slate-200 font-mono text-blue-700 bg-blue-50/30" dir="ltr">{h.low ? Number(h.low).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-'}</td>
-                              <td className="p-2 border border-slate-200 text-xs text-slate-600">{h.source || '-'}</td>
+                            <tr key={h.id || idx} className="even:bg-slate-50/80 hover:bg-blue-50/20 transition-colors">
+                              <td className="p-2 border border-slate-200 font-mono text-xs text-slate-700 text-center" dir="ltr" style={{ unicodeBidi: 'isolate' }}>{new Intl.DateTimeFormat('en-GB', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(h.recorded_at))}</td>
+                              <td className="p-2 border border-slate-200 font-mono font-black text-slate-900 text-center" dir="ltr" style={{ unicodeBidi: 'isolate' }}>{Number(h.price).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                              <td className="p-2 border border-slate-200 font-mono text-slate-600 text-center" dir="ltr" style={{ unicodeBidi: 'isolate' }}>{Number(prevPrice).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                              <td className={`p-2 border border-slate-200 font-mono text-center ${cvColor}`} dir="ltr" style={{ unicodeBidi: 'isolate' }}>{cvText}</td>
+                              <td className={`p-2 border border-slate-200 font-mono text-center ${cpColor}`} dir="ltr" style={{ unicodeBidi: 'isolate' }}>{cpText}</td>
+                              <td className="p-2 border border-slate-200 font-mono text-amber-800 bg-amber-50/20 text-center" dir="ltr" style={{ unicodeBidi: 'isolate' }}>{h.high ? Number(h.high).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}</td>
+                              <td className="p-2 border border-slate-200 font-mono text-blue-800 bg-blue-50/20 text-center" dir="ltr" style={{ unicodeBidi: 'isolate' }}>{h.low ? Number(h.low).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}</td>
+                              <td className="p-2 border border-slate-200 text-xs text-slate-700 text-center font-semibold" dir="ltr" style={{ unicodeBidi: 'isolate' }}>{sourceDisplay}</td>
                               <td className="p-2 border border-slate-200 text-center">
-                                <span className={trend === 'up' ? 'text-green-600 font-bold' : trend === 'down' ? 'text-red-600 font-bold' : 'text-slate-400 font-bold'}>
-                                  {trend === 'up' ? '▲' : trend === 'down' ? '▼' : '-'}
+                                <span className={`inline-flex items-center justify-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold border ${trendBadgeClass}`}>
+                                  <span>{trendIcon}</span>
+                                  <span>{trendLabel}</span>
                                 </span>
                               </td>
                             </tr>
