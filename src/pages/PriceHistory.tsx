@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../store/authStore';
-import { Download, Search, Edit2, Trash2, X, RefreshCw, BarChart2, CheckSquare, Square, FileText, Filter } from 'lucide-react';
+import { Download, Search, Edit2, Trash2, X, RefreshCw, BarChart2, CheckSquare, Square, FileText, Filter, AlertTriangle, Layers, ListFilter } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import type { SectorCatalog, CommodityCatalog } from '../types';
 import { formatAdminDateTime, getDayKey } from '../utils/dateUtils';
@@ -27,6 +27,8 @@ const CHART_COLORS = [
 export default function PriceHistory() {
   const { adminUser, session } = useAuthStore();
   const currentAdminId = adminUser?.id || session?.user?.id || null;
+  const [viewMode, setViewMode] = useState<'daily' | 'all'>('daily');
+  const [rawHistory, setRawHistory] = useState<any[]>([]);
   const [allLatestHistory, setAllLatestHistory] = useState<any[]>([]);
   const [tableSearch, setTableSearch] = useState('');
   const [history, setHistory] = useState<any[]>([]);
@@ -57,109 +59,29 @@ export default function PriceHistory() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    fetchCatalogs();
-  }, []);
+  // Helper to detect price anomalies (zero/negative or extreme percentage swings)
+  const checkPriceAnomaly = (item: any): { isAnomaly: boolean; reason?: string } => {
+    if (!item) return { isAnomaly: false };
+    const price = Number(item.price);
+    const prev = Number(item.previous_price);
+    const changePercent = Number(item.change_percent);
 
-  // Fetch only on apply filter
-  useEffect(() => {
-    if (hasAppliedFilter) {
-      fetchHistory();
+    if (isNaN(price) || price <= 0) {
+      return { isAnomaly: true, reason: 'السعر غير منطقي (صفر أو قيمة سالبة)' };
     }
-  }, [hasAppliedFilter]);
-
-  // Update paginated slice and total pages when allLatestHistory, tableSearch, or page changes
-  useEffect(() => {
-    const filtered = allLatestHistory.filter(item => {
-      if (!tableSearch) return true;
-      const q = tableSearch.toLowerCase().trim();
-      const c = catalog.find(x => x.symbol === item.symbol);
-      return (
-        item.symbol.toLowerCase().includes(q) ||
-        (item.name_ar && item.name_ar.includes(q)) ||
-        (item.name_en && item.name_en.toLowerCase().includes(q)) ||
-        (c?.name_ar && c.name_ar.includes(q)) ||
-        (c?.name_en && c.name_en.toLowerCase().includes(q)) ||
-        (item.sector && item.sector.toLowerCase().includes(q))
-      );
-    });
-
-    const pages = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE));
-    setTotalPages(pages);
-
-    const safePage = Math.min(page, pages);
-    if (safePage !== page && pages > 0) {
-      setPage(safePage);
+    if (!isNaN(changePercent) && Math.abs(changePercent) >= 50) {
+      return { 
+        isAnomaly: true, 
+        reason: `تغير حاد غير اعتيادي (${changePercent > 0 ? '+' : ''}${changePercent}%)` 
+      };
     }
-
-    const from = (safePage - 1) * ITEMS_PER_PAGE;
-    const to = from + ITEMS_PER_PAGE;
-    setHistory(filtered.slice(from, to));
-  }, [allLatestHistory, tableSearch, page, catalog]);
-
-  const fetchCatalogs = async () => {
-    const [sectorsRes, catalogRes, adminsRes] = await Promise.all([
-      supabase.from('sectors_catalog').select('*').order('sort_order', { ascending: true }),
-      supabase.from('commodities').select('*'),
-      supabase.from('admin_users').select('id, full_name, email')
-    ]);
-    if (sectorsRes.data) setSectors(sectorsRes.data);
-    if (catalogRes.data) setCatalog(catalogRes.data);
-    if (adminsRes.data) {
-      const map: Record<string, { full_name?: string; email: string }> = {};
-      adminsRes.data.forEach((u: any) => {
-        if (u.id) {
-          map[u.id] = { full_name: u.full_name, email: u.email };
-        }
-        if (u.email) {
-          map[u.email] = { full_name: u.full_name, email: u.email };
-        }
-      });
-      setAdminUsersMap(map);
+    if (prev > 0 && (price >= prev * 3 || price <= prev * 0.33)) {
+      return { 
+        isAnomaly: true, 
+        reason: 'قفزة سعرية حادة مقارنة بالسعر السابق' 
+      };
     }
-  };
-
-  const getAdminDisplayName = (userId?: string | null, emailFallback?: string | null) => {
-    if (!userId && !emailFallback) return 'غير معروف';
-    if (userId && adminUsersMap[userId]) {
-      return adminUsersMap[userId].full_name || adminUsersMap[userId].email || 'غير معروف';
-    }
-    if (emailFallback && adminUsersMap[emailFallback]) {
-      return adminUsersMap[emailFallback].full_name || adminUsersMap[emailFallback].email || emailFallback;
-    }
-    return 'غير معروف';
-  };
-
-  const applyFilters = () => {
-    if (selectedSymbols.length === 0) {
-      alert('يرجى اختيار سلعة واحدة على الأقل أو الضغط على عرض الكل');
-      return;
-    }
-    setPage(1);
-    setHasAppliedFilter(true);
-    fetchHistory();
-  };
-
-  const showAllData = () => {
-    setSelectedSymbols(catalog.map(c => c.symbol));
-    setFromDate('');
-    setToDate('');
-    setPage(1);
-    setHasAppliedFilter(true);
-    fetchHistory(catalog.map(c => c.symbol), '', '');
-  };
-
-  const resetFilters = () => {
-    setSelectedSymbols([]);
-    setFromDate('');
-    setToDate('');
-    setSectorFilter('all');
-    setSearchCommodity('');
-    setTableSearch('');
-    setHasAppliedFilter(false);
-    setShowChart(false);
-    setAllLatestHistory([]);
-    setHistory([]);
+    return { isAnomaly: false };
   };
 
   // Helper function to extract ONE record per commodity PER DAY (Latest price by timestamp for that day, with true day High and Low)
@@ -228,6 +150,139 @@ export default function PriceHistory() {
     });
   };
 
+  useEffect(() => {
+    fetchCatalogs();
+  }, []);
+
+  // Sync processed list when raw records or viewMode change
+  useEffect(() => {
+    if (viewMode === 'daily') {
+      const daily = extractLatestPerCommodityPerDay(rawHistory);
+      setAllLatestHistory(daily);
+    } else {
+      const sorted = [...rawHistory].sort((a, b) => {
+        const timeA = new Date(a.recorded_at || a.created_at || 0).getTime();
+        const timeB = new Date(b.recorded_at || b.created_at || 0).getTime();
+        return timeB - timeA;
+      });
+      setAllLatestHistory(sorted);
+    }
+  }, [rawHistory, viewMode]);
+
+  // Derived counts
+  const dailySummaryCount = React.useMemo(() => {
+    if (viewMode === 'daily') return allLatestHistory.length;
+    return extractLatestPerCommodityPerDay(rawHistory).length;
+  }, [rawHistory, allLatestHistory, viewMode]);
+
+  const anomalyCount = React.useMemo(() => {
+    return allLatestHistory.filter(item => checkPriceAnomaly(item).isAnomaly).length;
+  }, [allLatestHistory]);
+
+  // Fetch only on apply filter
+  useEffect(() => {
+    if (hasAppliedFilter) {
+      fetchHistory();
+    }
+  }, [hasAppliedFilter]);
+
+  // Update paginated slice and total pages when allLatestHistory, tableSearch, or page changes
+  useEffect(() => {
+    const filtered = allLatestHistory.filter(item => {
+      if (!tableSearch) return true;
+      const q = tableSearch.toLowerCase().trim();
+      const c = catalog.find(x => x.symbol === item.symbol);
+      return (
+        item.symbol.toLowerCase().includes(q) ||
+        (item.name_ar && item.name_ar.includes(q)) ||
+        (item.name_en && item.name_en.toLowerCase().includes(q)) ||
+        (c?.name_ar && c.name_ar.includes(q)) ||
+        (c?.name_en && c.name_en.toLowerCase().includes(q)) ||
+        (item.sector && item.sector.toLowerCase().includes(q))
+      );
+    });
+
+    const pages = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE));
+    setTotalPages(pages);
+
+    const safePage = Math.min(page, pages);
+    if (safePage !== page && pages > 0) {
+      setPage(safePage);
+    }
+
+    const from = (safePage - 1) * ITEMS_PER_PAGE;
+    const to = from + ITEMS_PER_PAGE;
+    setHistory(filtered.slice(from, to));
+  }, [allLatestHistory, tableSearch, page, catalog]);
+
+  const fetchCatalogs = async () => {
+    const [sectorsRes, catalogRes, adminsRes] = await Promise.all([
+      supabase.from('sectors_catalog').select('*').order('sort_order', { ascending: true }),
+      supabase.from('commodities').select('*'),
+      supabase.from('admin_users').select('id, full_name, email')
+    ]);
+    if (sectorsRes.data) setSectors(sectorsRes.data);
+    if (catalogRes.data) setCatalog(catalogRes.data);
+    if (adminsRes.data) {
+      const map: Record<string, { full_name?: string; email: string }> = {};
+      adminsRes.data.forEach((u: any) => {
+        if (u.id) {
+          map[u.id] = { full_name: u.full_name, email: u.email };
+        }
+        if (u.email) {
+          map[u.email] = { full_name: u.full_name, email: u.email };
+        }
+      });
+      setAdminUsersMap(map);
+    }
+  };
+
+  const getAdminDisplayName = (userId?: string | null, emailFallback?: string | null) => {
+    if (!userId && !emailFallback) return 'غير معروف';
+    if (userId && adminUsersMap[userId]) {
+      return adminUsersMap[userId].full_name || adminUsersMap[userId].email || 'غير معروف';
+    }
+    if (emailFallback && adminUsersMap[emailFallback]) {
+      return adminUsersMap[emailFallback].full_name || adminUsersMap[emailFallback].email || emailFallback;
+    }
+    return emailFallback || userId || 'غير معروف';
+  };
+
+  const applyFilters = () => {
+    if (selectedSymbols.length === 0) {
+      alert('يرجى اختيار سلعة واحدة على الأقل أو الضغط على عرض الكل');
+      return;
+    }
+    setPage(1);
+    setHasAppliedFilter(true);
+    fetchHistory();
+  };
+
+  const showAllData = () => {
+    setSelectedSymbols(catalog.map(c => c.symbol));
+    setFromDate('');
+    setToDate('');
+    setPage(1);
+    setHasAppliedFilter(true);
+    fetchHistory(catalog.map(c => c.symbol), '', '');
+  };
+
+  const resetFilters = () => {
+    setSelectedSymbols([]);
+    setFromDate('');
+    setToDate('');
+    setSectorFilter('all');
+    setSearchCommodity('');
+    setTableSearch('');
+    setHasAppliedFilter(false);
+    setShowChart(false);
+    setRawHistory([]);
+    setAllLatestHistory([]);
+    setHistory([]);
+    setViewMode('daily');
+    setPage(1);
+  };
+
   const fetchHistory = async (overrideSymbols?: string[], overrideFrom?: string, overrideTo?: string) => {
     try {
       setLoading(true);
@@ -237,32 +292,42 @@ export default function PriceHistory() {
       const targetFrom = overrideFrom !== undefined ? overrideFrom : fromDate;
       const targetTo = overrideTo !== undefined ? overrideTo : toDate;
       
-      let query = supabase.from('commodity_price_history').select('*');
-      
-      if (targetSymbols.length > 0) {
-        query = query.in('symbol', targetSymbols);
+      let allRecords: any[] = [];
+      let from = 0;
+      const CHUNK_SIZE = 1000;
+
+      while (true) {
+        let query = supabase.from('commodity_price_history').select('*');
+        
+        if (targetSymbols.length > 0) {
+          query = query.in('symbol', targetSymbols);
+        }
+        
+        if (targetFrom) {
+          query = query.gte('recorded_at', new Date(targetFrom).toISOString());
+        }
+        if (targetTo) {
+          const to = new Date(targetTo);
+          to.setHours(23, 59, 59, 999);
+          query = query.lte('recorded_at', to.toISOString());
+        }
+        
+        query = query
+          .order('recorded_at', { ascending: false })
+          .order('created_at', { ascending: false })
+          .range(from, from + CHUNK_SIZE - 1);
+        
+        const { data, error: err } = await query;
+        
+        if (err) throw err;
+        if (!data || data.length === 0) break;
+
+        allRecords = allRecords.concat(data);
+        if (data.length < CHUNK_SIZE) break;
+        from += CHUNK_SIZE;
       }
       
-      if (targetFrom) {
-        query = query.gte('recorded_at', new Date(targetFrom).toISOString());
-      }
-      if (targetTo) {
-        const to = new Date(targetTo);
-        to.setHours(23, 59, 59, 999);
-        query = query.lte('recorded_at', to.toISOString());
-      }
-      
-      query = query
-        .order('recorded_at', { ascending: false })
-        .order('created_at', { ascending: false });
-      
-      const { data, error: err } = await query;
-      
-      if (err) throw err;
-      
-      // Deduplicate: ONE ROW PER COMMODITY PER DAY (Latest price record by timestamp)
-      const latestList = extractLatestPerCommodityPerDay(data || []);
-      setAllLatestHistory(latestList);
+      setRawHistory(allRecords);
     } catch (err: any) {
       console.error(err);
       setError('حدث خطأ في جلب الأرشيف');
@@ -371,32 +436,57 @@ export default function PriceHistory() {
     setToDate(end.toISOString().split('T')[0]);
   };
 
-  // Exports
-  const fetchAllFilteredData = async () => {
-    let query = supabase.from('commodity_price_history').select('*');
-    if (selectedSymbols.length > 0) query = query.in('symbol', selectedSymbols);
-    if (fromDate) query = query.gte('recorded_at', new Date(fromDate).toISOString());
-    if (toDate) {
-      const to = new Date(toDate);
-      to.setHours(23, 59, 59, 999);
-      query = query.lte('recorded_at', to.toISOString());
+  // Exports with chunked pagination and active viewMode support
+  const fetchAllFilteredData = async (mode: 'daily' | 'all' = viewMode) => {
+    let allRecords: any[] = [];
+    let from = 0;
+    const CHUNK_SIZE = 1000;
+
+    while (true) {
+      let query = supabase.from('commodity_price_history').select('*');
+      if (selectedSymbols.length > 0) query = query.in('symbol', selectedSymbols);
+      if (fromDate) query = query.gte('recorded_at', new Date(fromDate).toISOString());
+      if (toDate) {
+        const to = new Date(toDate);
+        to.setHours(23, 59, 59, 999);
+        query = query.lte('recorded_at', to.toISOString());
+      }
+      query = query
+        .order('recorded_at', { ascending: false })
+        .order('created_at', { ascending: false })
+        .range(from, from + CHUNK_SIZE - 1);
+
+      const { data, error } = await query;
+      if (error) throw error;
+      if (!data || data.length === 0) break;
+
+      allRecords = allRecords.concat(data);
+      if (data.length < CHUNK_SIZE) break;
+      from += CHUNK_SIZE;
     }
-    query = query
-      .order('recorded_at', { ascending: false })
-      .order('created_at', { ascending: false });
-    const { data, error } = await query;
-    if (error) throw error;
-    return extractLatestPerCommodityPerDay(data || []);
+
+    if (mode === 'daily') {
+      return extractLatestPerCommodityPerDay(allRecords);
+    }
+    return allRecords;
+  };
+
+  const getDataForExport = async () => {
+    if (allLatestHistory && allLatestHistory.length > 0) {
+      return allLatestHistory;
+    }
+    return await fetchAllFilteredData(viewMode);
   };
 
   const getMergedDataForExport = (data: any[]) => {
     return data.map(row => {
       const c = catalog.find(x => x.symbol === row.symbol);
+      const sectorObj = sectors.find(s => s.sector_code === (c?.sector || row.sector));
       return {
         ...row,
         name_ar: c?.name_ar || row.name_ar || '',
         name_en: c?.name_en || row.name_en || '',
-        sector: c?.sector || row.sector || '',
+        sector: sectorObj?.name_ar || c?.sector || row.sector || '',
         unit: c?.unit || row.unit || '',
       };
     });
@@ -405,35 +495,41 @@ export default function PriceHistory() {
   const exportExcel = async () => {
     try {
       setLoading(true);
-      const data = await fetchAllFilteredData();
+      const data = await getDataForExport();
       if (!data || data.length === 0) {
         alert('لا توجد بيانات للتصدير');
         return;
       }
       
       const merged = getMergedDataForExport(data);
-      const rows = merged.map(r => ({
-        'التاريخ': formatAdminDateTime(r.recorded_at || r.created_at),
-        'الرمز': r.symbol,
-        'الاسم (عربي)': r.name_ar,
-        'الاسم (إنجليزي)': r.name_en,
-        'القطاع': r.sector,
-        'السعر': r.price,
-        'السعر السابق': r.previous_price,
-        'التغير': r.change_value,
-        'نسبة التغير %': r.change_percent,
-        'أعلى سعر': r.high,
-        'أقل سعر': r.low,
-        'أُدخل بواسطة': getAdminDisplayName(r.created_by),
-        'آخر تعديل بواسطة': getAdminDisplayName(r.updated_by, r.admin_email),
-        'المصدر': r.source,
-      }));
+      const rows = merged.map(r => {
+        const anomaly = checkPriceAnomaly(r);
+        return {
+          'التاريخ والوقت': formatAdminDateTime(r.recorded_at || r.created_at),
+          'الرمز': r.symbol,
+          'الاسم (عربي)': r.name_ar,
+          'الاسم (إنجليزي)': r.name_en,
+          'القطاع': r.sector,
+          'نوع العرض': viewMode === 'daily' ? 'ملخص يومي' : 'سجل تفصيلي',
+          'السعر': r.price,
+          'السعر السابق': r.previous_price ?? '',
+          'التغير': r.change_value ?? '',
+          'نسبة التغير %': r.change_percent != null ? `${r.change_percent}%` : '',
+          'أعلى سعر': r.high ?? '',
+          'أقل سعر': r.low ?? '',
+          'المصدر': r.source || '—',
+          'أُدخل بواسطة': getAdminDisplayName(r.created_by),
+          'آخر تعديل / المسؤول': getAdminDisplayName(r.updated_by, r.admin_email),
+          'حالة السجل': anomaly.isAnomaly ? `تنبيه: ${anomaly.reason}` : 'سليم',
+        };
+      });
       
       const worksheet = XLSX.utils.json_to_sheet(rows);
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, 'Archive');
       const today = new Date().toISOString().split('T')[0];
-      XLSX.writeFile(workbook, `archive_${today}.xlsx`);
+      const modeSuffix = viewMode === 'daily' ? 'daily_summary' : 'all_records';
+      XLSX.writeFile(workbook, `archive_${modeSuffix}_${today}.xlsx`);
     } catch (err) {
       console.error(err);
       alert('حدث خطأ أثناء التصدير');
@@ -445,28 +541,33 @@ export default function PriceHistory() {
   const exportCSV = async () => {
     try {
       setLoading(true);
-      const data = await fetchAllFilteredData();
+      const data = await getDataForExport();
       if (!data || data.length === 0) {
         alert('لا توجد بيانات للتصدير');
         return;
       }
       
       const merged = getMergedDataForExport(data);
-      const rows = merged.map(r => ({
-        Date: r.recorded_at || r.created_at,
-        Symbol: r.symbol,
-        NameAR: r.name_ar,
-        Sector: r.sector,
-        Price: r.price,
-        PrevPrice: r.previous_price,
-        ChangeValue: r.change_value,
-        ChangePercent: r.change_percent,
-        High: r.high,
-        Low: r.low,
-        CreatedBy: getAdminDisplayName(r.created_by),
-        LastUpdatedBy: getAdminDisplayName(r.updated_by, r.admin_email),
-        Source: r.source,
-      }));
+      const rows = merged.map(r => {
+        const anomaly = checkPriceAnomaly(r);
+        return {
+          Date: formatAdminDateTime(r.recorded_at || r.created_at),
+          Symbol: r.symbol,
+          NameAR: r.name_ar,
+          Sector: r.sector,
+          ViewMode: viewMode === 'daily' ? 'Daily Summary' : 'All Records',
+          Price: r.price,
+          PrevPrice: r.previous_price ?? '',
+          ChangeValue: r.change_value ?? '',
+          ChangePercent: r.change_percent != null ? `${r.change_percent}%` : '',
+          High: r.high ?? '',
+          Low: r.low ?? '',
+          Source: r.source || '—',
+          CreatedBy: getAdminDisplayName(r.created_by),
+          LastUpdatedBy: getAdminDisplayName(r.updated_by, r.admin_email),
+          DataStatus: anomaly.isAnomaly ? `Anomaly: ${anomaly.reason}` : 'Normal',
+        };
+      });
       
       const worksheet = XLSX.utils.json_to_sheet(rows);
       const csv = XLSX.utils.sheet_to_csv(worksheet);
@@ -476,7 +577,8 @@ export default function PriceHistory() {
       const link = document.createElement('a');
       link.setAttribute('href', url);
       const today = new Date().toISOString().split('T')[0];
-      link.setAttribute('download', `archive_${today}.csv`);
+      const modeSuffix = viewMode === 'daily' ? 'daily_summary' : 'all_records';
+      link.setAttribute('download', `archive_${modeSuffix}_${today}.csv`);
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -734,23 +836,83 @@ export default function PriceHistory() {
       {hasAppliedFilter && !loading && (allLatestHistory.length > 0 || history.length > 0) && (
         <div className="space-y-6">
           
-          <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-4 bg-white dark:bg-dark-card p-4 rounded-xl border dark:border-dark-border shadow-sm">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-lg bg-primary-50 dark:bg-primary-900/30 flex items-center justify-center text-primary-600 dark:text-primary-400">
-                <CheckSquare size={18} />
+          <div className="flex flex-col lg:flex-row justify-between items-stretch lg:items-center gap-4 bg-white dark:bg-dark-card p-4 rounded-xl border dark:border-dark-border shadow-sm">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 flex-wrap">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-primary-50 dark:bg-primary-900/30 flex items-center justify-center text-primary-600 dark:text-primary-400 shrink-0">
+                  {viewMode === 'daily' ? <Layers size={20} /> : <ListFilter size={20} />}
+                </div>
+                <div>
+                  <h4 className="font-bold text-slate-800 dark:text-white text-sm">
+                    {viewMode === 'daily' 
+                      ? `الملخص اليومي للأسعار (${allLatestHistory.length} يوم)` 
+                      : `جميع سجلات وتحديثات الأسعار (${allLatestHistory.length} سجل)`}
+                  </h4>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    {viewMode === 'daily'
+                      ? 'يتم عرض آخر سعر إغلاق مسجل لكل سلعة في كل يوم مع أعلى وأقل سعر حقيقي'
+                      : 'عرض كل عمليات إدخال وتحديث الأسعار التاريخية دون دمج أو حذف'}
+                  </p>
+                </div>
               </div>
-              <div>
-                <h4 className="font-bold text-slate-800 dark:text-white text-sm">
-                  سجلات الأرشيف اليومية ({allLatestHistory.length} سجل يومي)
-                </h4>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  يتم عرض آخر سعر مسجل لكل سلعة في كل يوم
-                </p>
+
+              {/* View Mode Toggle */}
+              <div className="inline-flex p-1 bg-slate-100 dark:bg-slate-800 rounded-lg border dark:border-dark-border">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setViewMode('daily');
+                    setPage(1);
+                  }}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition ${
+                    viewMode === 'daily'
+                      ? 'bg-white dark:bg-primary-600 text-primary-700 dark:text-white shadow-sm'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                  title="عرض آخر سعر مسجل لكل سلعة في كل يوم"
+                >
+                  <Layers size={14} />
+                  <span>الملخص اليومي</span>
+                  <span className="text-[11px] px-1.5 py-0.2 rounded-full bg-slate-200 dark:bg-slate-700/60 font-mono">
+                    {dailySummaryCount}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setViewMode('all');
+                    setPage(1);
+                  }}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition ${
+                    viewMode === 'all'
+                      ? 'bg-white dark:bg-primary-600 text-primary-700 dark:text-white shadow-sm'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                  title="عرض جميع عمليات تحديث الأسعار دون دمج"
+                >
+                  <ListFilter size={14} />
+                  <span>جميع السجلات</span>
+                  <span className="text-[11px] px-1.5 py-0.2 rounded-full bg-slate-200 dark:bg-slate-700/60 font-mono">
+                    {rawHistory.length}
+                  </span>
+                </button>
               </div>
+
+              {/* Anomaly Badge if anomalies exist */}
+              {anomalyCount > 0 && (
+                <div 
+                  className="flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/30 px-2.5 py-1 rounded-md border border-amber-200 dark:border-amber-800 shrink-0"
+                  title="تم تمييز الأسعار الشاذة أو القفزات غير المعتادة بشارة تحذيرية في الجدول"
+                >
+                  <AlertTriangle size={13} className="shrink-0 text-amber-600" />
+                  <span>{anomalyCount} قيمة شاذة</span>
+                </div>
+              )}
             </div>
 
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-              <div className="relative min-w-[220px]">
+              <div className="relative min-w-[200px]">
                 <Search size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
                   type="text"
@@ -774,10 +936,10 @@ export default function PriceHistory() {
 
               <button 
                 onClick={() => setShowChart(!showChart)}
-                className="flex items-center justify-center gap-2 px-4 py-2 border border-slate-300 dark:border-dark-border bg-white dark:bg-dark-card rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition font-medium text-sm text-slate-700 dark:text-slate-300 shadow-sm"
+                className="flex items-center justify-center gap-2 px-3.5 py-2 border border-slate-300 dark:border-dark-border bg-white dark:bg-dark-card rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition font-medium text-sm text-slate-700 dark:text-slate-300 shadow-sm whitespace-nowrap"
               >
                 <BarChart2 size={16} />
-                {showChart ? 'إخفاء الرسم البياني' : 'عرض الرسم البياني'}
+                {showChart ? 'إخفاء الرسم' : 'عرض الرسم'}
               </button>
             </div>
           </div>
@@ -857,7 +1019,7 @@ export default function PriceHistory() {
                         <CheckSquare size={16} className="text-slate-400" />
                       </div>
                     </th>
-                    <th className="px-4 py-4 font-semibold">التاريخ</th>
+                    <th className="px-4 py-4 font-semibold">التاريخ والوقت</th>
                     <th className="px-4 py-4 font-semibold">الرمز</th>
                     <th className="px-4 py-4 font-semibold">السلعة</th>
                     <th className="px-4 py-4 font-semibold">القطاع</th>
@@ -867,15 +1029,15 @@ export default function PriceHistory() {
                     <th className="px-4 py-4 font-semibold text-left">% التغير</th>
                     <th className="px-4 py-4 font-semibold text-left">أعلى</th>
                     <th className="px-4 py-4 font-semibold text-left">أقل</th>
-                    <th className="px-4 py-4 font-semibold">أُدخل بواسطة</th>
-                    <th className="px-4 py-4 font-semibold">آخر تعديل بواسطة</th>
                     <th className="px-4 py-4 font-semibold">المصدر</th>
+                    <th className="px-4 py-4 font-semibold">المسؤول / المدخل</th>
                     <th className="px-4 py-4 font-semibold text-center">الإجراءات</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-dark-border">
                   {history.map((item) => {
                     const c = catalog.find(x => x.symbol === item.symbol);
+                    const anomaly = checkPriceAnomaly(item);
                     return (
                       <tr key={item.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition">
                         <td className="px-4 py-3">
@@ -883,56 +1045,62 @@ export default function PriceHistory() {
                              <input type="checkbox" className="rounded border-slate-300 text-primary-600 focus:ring-primary-500" />
                            </div>
                         </td>
-                        <td className="px-4 py-3 whitespace-nowrap" dir="ltr">
+                        <td className="px-4 py-3 whitespace-nowrap text-xs text-slate-700 dark:text-slate-300 font-mono" dir="ltr">
                           {formatAdminDateTime(item.recorded_at || item.created_at)}
                         </td>
                         <td className="px-4 py-3 font-bold text-slate-900 dark:text-white">
                           {item.symbol}
                         </td>
                         <td className="px-4 py-3 text-slate-700 dark:text-slate-200 font-medium">
-                          {c?.name_ar || '-'}
+                          {c?.name_ar || item.name_ar || '-'}
                         </td>
                         <td className="px-4 py-3 text-slate-500 dark:text-slate-400 text-xs">
                           {sectors.find(s => s.sector_code === (c?.sector || item.sector))?.name_ar || item.sector || '-'}
                         </td>
                         <td className="px-4 py-3 text-left font-mono font-bold text-slate-900 dark:text-white">
-                          {item.price}
+                          <div className="flex items-center justify-end gap-1.5">
+                            {anomaly.isAnomaly && (
+                              <span 
+                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-sans font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 border border-amber-200 dark:border-amber-800/60"
+                                title={anomaly.reason}
+                              >
+                                <AlertTriangle size={11} className="text-amber-600 dark:text-amber-400 shrink-0" />
+                                <span>شاذ</span>
+                              </span>
+                            )}
+                            <span>{item.price}</span>
+                          </div>
                         </td>
                         <td className="px-4 py-3 text-left font-mono text-slate-500">
                           {item.previous_price || '-'}
                         </td>
                         <td className={`px-4 py-3 text-left font-mono font-bold ${item.change_value > 0 ? 'text-emerald-600' : item.change_value < 0 ? 'text-red-600' : 'text-slate-500'}`}>
-                          {item.change_value > 0 ? '+' : ''}{item.change_value}
+                          {item.change_value > 0 ? '+' : ''}{item.change_value ?? '-'}
                         </td>
                         <td className={`px-4 py-3 text-left font-mono font-bold ${item.change_percent > 0 ? 'text-emerald-600' : item.change_percent < 0 ? 'text-red-600' : 'text-slate-500'}`}>
-                          {item.change_percent > 0 ? '+' : ''}{item.change_percent}%
+                          {item.change_percent != null ? `${item.change_percent > 0 ? '+' : ''}${item.change_percent}%` : '-'}
                         </td>
                         <td className="px-4 py-3 text-left font-mono text-slate-500">
-                          {item.high || '-'}
+                          {item.high ?? '-'}
                         </td>
                         <td className="px-4 py-3 text-left font-mono text-slate-500">
-                          {item.low || '-'}
+                          {item.low ?? '-'}
+                        </td>
+                        <td className="px-4 py-3 text-slate-600 dark:text-slate-300 text-xs">
+                          {item.source ? (
+                            <span className="inline-block px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 border dark:border-dark-border text-slate-700 dark:text-slate-300 max-w-[140px] truncate" title={item.source}>
+                              {item.source}
+                            </span>
+                          ) : '-'}
                         </td>
                         <td className="px-4 py-3 whitespace-nowrap">
                           <span className={`text-xs px-2 py-0.5 rounded-md ${
-                            item.created_by && adminUsersMap[item.created_by] 
-                              ? 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-medium' 
-                              : 'text-slate-400 dark:text-slate-500'
-                          }`}>
-                            {getAdminDisplayName(item.created_by)}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 whitespace-nowrap">
-                          <span className={`text-xs px-2 py-0.5 rounded-md ${
-                            (item.updated_by && adminUsersMap[item.updated_by]) || (item.admin_email && adminUsersMap[item.admin_email])
+                            (item.admin_email || item.created_by || item.updated_by)
                               ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 font-medium' 
                               : 'text-slate-400 dark:text-slate-500'
-                          }`}>
-                            {getAdminDisplayName(item.updated_by, item.admin_email)}
+                          }`} title={item.admin_email || undefined}>
+                            {getAdminDisplayName(item.updated_by || item.created_by, item.admin_email)}
                           </span>
-                        </td>
-                        <td className="px-4 py-3 text-slate-500 dark:text-slate-400 text-xs">
-                          {item.source || '-'}
                         </td>
                         <td className="px-4 py-3 text-center">
                           <div className="flex items-center justify-center gap-1">

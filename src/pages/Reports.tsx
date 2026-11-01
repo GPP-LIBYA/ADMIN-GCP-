@@ -1,12 +1,50 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../store/authStore';
-import { FileText, Download, Image as ImageIcon, RotateCcw, AlertCircle } from 'lucide-react';
+import { 
+  FileText, 
+  Download, 
+  Image as ImageIcon, 
+  RotateCcw, 
+  AlertCircle, 
+  FileSpreadsheet, 
+  TrendingUp, 
+  TrendingDown, 
+  Minus, 
+  Layers, 
+  AlertTriangle, 
+  Activity,
+  LayoutDashboard,
+  Sparkles,
+  BarChart3,
+  Printer,
+  Loader2,
+  CheckCircle2
+} from 'lucide-react';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
+import * as XLSX from 'xlsx';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import type { CommodityCatalog, SectorCatalog, NewsArticle, Analysis } from '../types';
 import { formatAdminDate } from '../utils/dateUtils';
+import {
+  analyzeCommodity,
+  analyzeSectors,
+  computeExecutiveStats,
+  getDailySummaryRecords,
+  generateAutoExecutiveSummary,
+  type CommodityAnalysisResult,
+  type SectorAnalysisResult,
+  type ExecutiveReportStats
+} from '../utils/economicAnalytics';
+import { EconomicKpiCards } from '../components/reports/EconomicKpiCards';
+import { SectorHeatmap } from '../components/reports/SectorHeatmap';
+import { Base100ComparisonChart } from '../components/reports/Base100ComparisonChart';
+import { TopMoversChart } from '../components/reports/TopMoversChart';
+import { DashboardExportToolbar, type DashboardExportScope } from '../components/reports/DashboardExportToolbar';
+import { DashboardPrintTemplate } from '../components/reports/DashboardPrintTemplate';
+
+
 
 
 const ReportLogo = ({ className, alt = "Libya Trade Network Logo", url }: { className?: string, alt?: string, url: string }) => {
@@ -89,6 +127,27 @@ const Reports: React.FC = () => {
   const [isGenerated, setIsGenerated] = useState(false);
   const [reportStartDate, setReportStartDate] = useState('');
   const [reportEndDate, setReportEndDate] = useState('');
+  const [chartMode, setChartMode] = useState<'absolute' | 'normalized'>('absolute');
+  const [totalHistoryRows, setTotalHistoryRows] = useState<number>(0);
+  const [fetchStatusMessage, setFetchStatusMessage] = useState<string>('');
+  const [activeMainView, setActiveMainView] = useState<'bi_dashboard' | 'detailed_document'>('bi_dashboard');
+
+  // Dashboard Specific Refs for Selective and Full Export
+  const dashboardRef = useRef<HTMLDivElement>(null);
+  const kpiCardsRef = useRef<HTMLDivElement>(null);
+  const heatmapRef = useRef<HTMLDivElement>(null);
+  const base100Ref = useRef<HTMLDivElement>(null);
+  const topMoversRef = useRef<HTMLDivElement>(null);
+  const printPage1Ref = useRef<HTMLDivElement>(null);
+  const printPage2Ref = useRef<HTMLDivElement>(null);
+  const printPage3Ref = useRef<HTMLDivElement>(null);
+  const printContainerRef = useRef<HTMLDivElement>(null);
+
+  // Dashboard Export & Print State
+  const [dashboardExportScope, setDashboardExportScope] = useState<DashboardExportScope>('all');
+  const [exportingDashboard, setExportingDashboard] = useState(false);
+  const [dashboardExportMessage, setDashboardExportMessage] = useState<string>('');
+  const [dashboardSuccessMessage, setDashboardSuccessMessage] = useState<string>('');
 
   // Settings
   const [logoLeft, setLogoLeft] = useState('https://i.postimg.cc/tCPyyJnm/58f6eba6-9dd7-45e2-8434-6730f9b4412c-removebg-preview.png');
@@ -166,61 +225,89 @@ const Reports: React.FC = () => {
       const { data: prices } = await pricesQuery;
 
             // Probe for recorded_at column
-      let dateColumn = 'recorded_at';
-      const { error: probeError } = await supabase.from('commodity_price_history').select('recorded_at').limit(1);
+      let dateColumn = "recorded_at";
+      const { error: probeError } = await supabase.from("commodity_price_history").select("recorded_at").limit(1);
       if (probeError) {
-        dateColumn = 'created_at';
+        dateColumn = "created_at";
       }
 
-      let historyQuery = supabase.from('commodity_price_history').select('symbol, price, high, low, source, recorded_at, created_at');
-      
-      const sectorSymbols = prices ? prices.map((p: any) => p.symbol) : [];
-      if (sectorFilter && (reportType === 'sector' || ((reportType === 'monthly' || reportType === 'annual') && monthlyScope === 'sector'))) {
-        historyQuery = historyQuery.in('symbol', selectedCommodities);
-      }
-      if (symbolFilter && (reportType === 'commodity' || reportType === 'detailed_commodity' || ((reportType === 'monthly' || reportType === 'annual') && monthlyScope === 'commodity'))) {
-        historyQuery = historyQuery.eq('symbol', symbolFilter);
-      }
-      
-      if (reportType === 'detailed_commodity') {
-        historyQuery = historyQuery.order(dateColumn, { ascending: true });
-      }
-      
-      // Date filtering
+      // Date filtering bounds
       const now = new Date();
-      
-      let actualStartDate, actualEndDate;
-      
-      if (reportType === 'annual') {
+      let actualStartDate;
+      let actualEndDate;
+
+      if (reportType === "annual") {
         actualStartDate = `${reportYear}-01-01T00:00:00.000Z`;
         actualEndDate = `${reportYear}-12-31T23:59:59.999Z`;
-        historyQuery = historyQuery.gte(dateColumn, actualStartDate).lte(dateColumn, actualEndDate).order(dateColumn, { ascending: true });
-      } else if (reportType === 'monthly') {
+      } else if (reportType === "monthly") {
         actualStartDate = `${reportYear}-${reportMonth}-01T00:00:00.000Z`;
         const lastDay = new Date(Date.UTC(Number(reportYear), Number(reportMonth), 0)).getUTCDate();
-        actualEndDate = `${reportYear}-${reportMonth}-${String(lastDay).padStart(2, '0')}T23:59:59.999Z`;
-        
-        historyQuery = historyQuery.gte(dateColumn, actualStartDate).lte(dateColumn, actualEndDate).order(dateColumn, { ascending: true });
-      } else if (periodFilter !== 'all' && periodFilter !== 'custom') {
+        actualEndDate = `${reportYear}-${reportMonth}-${String(lastDay).padStart(2, "0")}T23:59:59.999Z`;
+      } else if (periodFilter !== "all" && periodFilter !== "custom") {
         const from = new Date();
         from.setDate(now.getDate() - parseInt(periodFilter));
         actualStartDate = from.toISOString();
         actualEndDate = now.toISOString();
-        historyQuery = historyQuery.gte(dateColumn, actualStartDate).lte(dateColumn, actualEndDate).order(dateColumn, { ascending: true });
-      } else if (periodFilter === 'custom') {
+      } else if (periodFilter === "custom") {
         if (fromDate) {
           actualStartDate = `${fromDate}T00:00:00.000Z`;
-          historyQuery = historyQuery.gte(dateColumn, actualStartDate);
         }
         if (toDate) {
           actualEndDate = `${toDate}T23:59:59.999Z`;
-          historyQuery = historyQuery.lte(dateColumn, actualEndDate);
         }
-        historyQuery = historyQuery.order(dateColumn, { ascending: true });
-      } else {
-        historyQuery = historyQuery.order(dateColumn, { ascending: true });
       }
-      const { data: history } = await historyQuery;
+
+      // Chunked pagination loop to retrieve all records without 1000-row cutoff
+      const CHUNK_SIZE = 1000;
+      let fromRow = 0;
+      let allHistory = [];
+      let hasMore = true;
+      setFetchStatusMessage("جاري جلب السجلات التاريخية...");
+
+      while (hasMore) {
+        let chunkQuery = supabase
+          .from("commodity_price_history")
+          .select("symbol, price, high, low, source, recorded_at, created_at");
+
+        if (sectorFilter && (reportType === "sector" || ((reportType === "monthly" || reportType === "annual") && monthlyScope === "sector"))) {
+          chunkQuery = chunkQuery.in("symbol", selectedCommodities);
+        }
+        if (symbolFilter && (reportType === "commodity" || reportType === "detailed_commodity" || ((reportType === "monthly" || reportType === "annual") && monthlyScope === "commodity"))) {
+          chunkQuery = chunkQuery.eq("symbol", symbolFilter);
+        }
+
+        if (actualStartDate) {
+          chunkQuery = chunkQuery.gte(dateColumn, actualStartDate);
+        }
+        if (actualEndDate) {
+          chunkQuery = chunkQuery.lte(dateColumn, actualEndDate);
+        }
+
+        // Strict deterministic ordering to guarantee chunk integrity without skipped or duplicate rows
+        chunkQuery = chunkQuery.order(dateColumn, { ascending: true }).range(fromRow, fromRow + CHUNK_SIZE - 1);
+
+        const { data: chunk, error: chunkError } = await chunkQuery;
+        if (chunkError) {
+          console.error("History fetch chunk error at offset", fromRow, chunkError);
+          throw chunkError;
+        }
+
+        if (chunk && chunk.length > 0) {
+          allHistory = allHistory.concat(chunk);
+          if (chunk.length < CHUNK_SIZE) {
+            hasMore = false;
+          } else {
+            fromRow += CHUNK_SIZE;
+            setFetchStatusMessage(`تم جلب ${allHistory.length} سجل...`);
+          }
+        } else {
+          hasMore = false;
+        }
+      }
+
+      console.log(`Successfully retrieved ${allHistory.length} historical records via pagination.`);
+      setTotalHistoryRows(allHistory.length);
+      const history = allHistory;
 
       const periodHistoryData = history || [];
       const startDate = actualStartDate;
@@ -276,7 +363,12 @@ const Reports: React.FC = () => {
 
     try {
       setExporting(true);
-      await new Promise(resolve => setTimeout(resolve, 500));
+      if (activeMainView !== 'detailed_document') {
+        setActiveMainView('detailed_document');
+        await new Promise(resolve => setTimeout(resolve, 400));
+      } else {
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
 
       const pages = reportRef.current.querySelectorAll('.report-page');
       if (pages.length === 0) {
@@ -338,7 +430,12 @@ const Reports: React.FC = () => {
 
     try {
       setExporting(true);
-      await new Promise(resolve => setTimeout(resolve, 500));
+      if (activeMainView !== 'detailed_document') {
+        setActiveMainView('detailed_document');
+        await new Promise(resolve => setTimeout(resolve, 400));
+      } else {
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
 
       const canvas = await html2canvas(reportRef.current, {
         scale: 2,
@@ -372,101 +469,104 @@ const Reports: React.FC = () => {
     }
   };
 
+  const downloadReportExcel = () => {
+    if (!reportData || !reportData.prices) {
+      alert("يرجى إنشاء التقرير أولاً");
+      return;
+    }
+
+    try {
+      const wb = XLSX.utils.book_new();
+
+      // Sheet 1: Commodity Metrics
+      const commodityRows = reportData.prices.map((p: any) => {
+        const a = getCommodityAnalysis(p.symbol);
+        return {
+          "الرمز": p.symbol,
+          "اسم السلعة": p.name_ar,
+          "القطاع": p.sector,
+          "الوحدة": p.unit || "—",
+          "السعر الأول": a?.firstPrice ?? p.price,
+          "السعر الأخير": a?.lastPrice ?? p.price,
+          "التغير": a?.change_value?.toFixed(2) ?? "0.00",
+          "نسبة التغير %": a?.period_change_percent?.toFixed(2) ?? "0.00",
+          "أعلى سعر": a?.maxPrice ?? p.price,
+          "أدنى سعر": a?.minPrice ?? p.price,
+          "المتوسط": a?.averagePrice?.toFixed(2) ?? p.price,
+          "الانحراف المعياري": a?.standardDeviation?.toFixed(2) ?? "0.00",
+          "نسبة التذبذب %": a?.volatility_percent?.toFixed(2) ?? "0.00",
+          "الاتجاه": a?.trend === "up" ? "صعود" : a?.trend === "down" ? "هبوط" : "استقرار",
+          "حالة التحليل": a?.analysis_status ?? "—",
+          "عدد الأيام": a?.dailyDaysCount ?? 0,
+          "السجلات": a?.rawRecordsCount ?? 0,
+          "قفزات استثنائية": a?.anomaliesCount ?? 0
+        };
+      });
+      const wsCommodities = XLSX.utils.json_to_sheet(commodityRows);
+      XLSX.utils.book_append_sheet(wb, wsCommodities, "مؤشرات السلع");
+
+      // Sheet 2: Historical Records
+      if (reportData.history && reportData.history.length > 0) {
+        const histRows = reportData.history.map((h: any) => ({
+          "الرمز": h.symbol,
+          "السعر": h.price,
+          "أعلى": h.high ?? "—",
+          "أدنى": h.low ?? "—",
+          "المصدر": h.source ?? "—",
+          "التاريخ": h.recorded_at ? h.recorded_at.slice(0, 19).replace("T", " ") : "—"
+        }));
+        const wsHist = XLSX.utils.json_to_sheet(histRows);
+        XLSX.utils.book_append_sheet(wb, wsHist, "الأرشيف التاريخي");
+      }
+
+      const fileName = `GPP-Economic-Report-${new Date().toISOString().slice(0, 10)}.xlsx`;
+      XLSX.writeFile(wb, fileName);
+    } catch (err) {
+      console.error("Excel export error:", err);
+      alert("حدث خطأ أثناء تصدير ملف Excel");
+    }
+  };
+
   
   const getCommodityAnalysis = (symbol: string) => {
     if (!reportData || !reportData.history || !reportData.prices) return null;
     const commodityInfo = reportData.prices.find((p: any) => p.symbol === symbol);
     if (!commodityInfo) return null;
 
-    const history = reportData.history.filter((h: any) => h.symbol === symbol).sort((a: any, b: any) => new Date(a.recorded_at).getTime() - new Date(b.recorded_at).getTime());
-    
-    let price = commodityInfo.price || 0;
-    let previous_price = commodityInfo.previous_price || 0;
-    let change_value = price - previous_price;
-    let change_percent = commodityInfo.change_percent;
-    if (change_percent === null || change_percent === undefined) {
-      change_percent = previous_price ? (change_value / previous_price) * 100 : 0;
-    }
-
-    let maxPrice = price;
-    let minPrice = price;
-    let sumPrice = price;
-    let count = 1;
-    let firstPrice = price;
-    let lastPrice = price;
-
-    let upDays = 0;
-    let downDays = 0;
-    let stableDays = 0;
-    let hasData = false;
-
-    if (history.length > 0) {
-      hasData = true;
-      firstPrice = history[0].price;
-      lastPrice = history[history.length - 1].price;
-      maxPrice = Math.max(...history.map((h: any) => h.price));
-      minPrice = Math.min(...history.map((h: any) => h.price));
-      sumPrice = history.reduce((acc: number, h: any) => acc + h.price, 0);
-      count = history.length;
-
-      // When strict historical period requested
-      if (reportType !== 'daily') {
-        price = lastPrice;
-        previous_price = firstPrice;
-        change_value = lastPrice - firstPrice;
-        change_percent = firstPrice ? (change_value / firstPrice) * 100 : 0;
-      }
-
-      for (let i = 1; i < history.length; i++) {
-        const diff = history[i].price - history[i-1].price;
-        if (diff > 0) upDays++;
-        else if (diff < 0) downDays++;
-        else stableDays++;
-      }
-    } else if (reportType !== 'daily') {
-       // Force zero or fallback if strictly no data
-       hasData = false;
-    }
-
-    const averagePrice = sumPrice / count;
-    const period_change_percent = firstPrice ? ((lastPrice - firstPrice) / firstPrice) * 100 : 0;
-    const price_range = maxPrice - minPrice;
-    const volatility_percent = averagePrice ? (price_range / averagePrice) * 100 : 0;
-
-    let analysis_status = 'استقرار';
-    if (period_change_percent > 5) analysis_status = 'ارتفاع قوي';
-    else if (period_change_percent > 0.5) analysis_status = 'ارتفاع محدود';
-    else if (period_change_percent < -5) analysis_status = 'انخفاض قوي';
-    else if (period_change_percent < -0.5) analysis_status = 'انخفاض محدود';
-
-    if (volatility_percent > 10) analysis_status = 'تذبذب مرتفع';
+    const analysis = analyzeCommodity(commodityInfo, reportData.history);
 
     return {
-      symbol: commodityInfo.symbol,
-      name_ar: commodityInfo.name_ar,
-      name_en: commodityInfo.name_en,
-      sector: commodityInfo.sector,
-      unit: commodityInfo.unit,
-      price,
-      previous_price,
-      change_value,
-      change_percent,
-      trend: commodityInfo.trend || (change_percent > 0 ? 'up' : change_percent < 0 ? 'down' : 'stable'),
+      symbol: analysis.symbol,
+      name_ar: analysis.name_ar,
+      name_en: analysis.name_en,
+      sector: analysis.sector,
+      unit: analysis.unit,
+      price: analysis.currentPrice,
+      previous_price: analysis.startPrice,
+      change_value: analysis.changeValue,
+      change_percent: analysis.changePercent,
+      trend: analysis.trend,
       source: commodityInfo.source,
       updated_at: commodityInfo.updated_at,
-      maxPrice,
-      minPrice,
-      averagePrice,
-      firstPrice,
-      lastPrice,
-      period_change_percent,
-      price_range,
-      volatility_percent,
-      analysis_status,
-      upDays,
-      downDays,
-      stableDays,
-      hasData
+      maxPrice: analysis.maxPrice,
+      minPrice: analysis.minPrice,
+      averagePrice: analysis.avgPrice,
+      firstPrice: analysis.startPrice,
+      lastPrice: analysis.endPrice,
+      period_change_percent: analysis.changePercent,
+      price_range: analysis.maxPrice - analysis.minPrice,
+      volatility_percent: analysis.rangePercent,
+      standardDeviation: analysis.standardDeviation,
+      medianPrice: analysis.medianPrice,
+      analysis_status: analysis.analysisStatus,
+      rawRecordsCount: analysis.rawRecordsCount,
+      dailyDaysCount: analysis.dailyDaysCount,
+      anomaliesCount: analysis.anomaliesCount,
+      upDays: analysis.upDays,
+      downDays: analysis.downDays,
+      stableDays: analysis.stableDays,
+      hasData: analysis.hasData,
+      normalizedSeries: analysis.normalizedSeries
     };
   };
 
@@ -576,27 +676,419 @@ const Reports: React.FC = () => {
     };
   };
 
+  // Memoized full economic analysis results for all available commodities
+  const commoditiesAnalyticsList = React.useMemo<CommodityAnalysisResult[]>(() => {
+    if (!reportData || !reportData.prices || !reportData.history) return [];
+    return reportData.prices.map((p: any) => analyzeCommodity(p, reportData.history));
+  }, [reportData]);
+
+  // Memoized sector analyses
+  const sectorAnalyticsList = React.useMemo<SectorAnalysisResult[]>(() => {
+    if (!commoditiesAnalyticsList.length || !sectors.length) return [];
+    return analyzeSectors(commoditiesAnalyticsList, sectors);
+  }, [commoditiesAnalyticsList, sectors]);
+
+  // Selected period human-readable label
+  const periodLabelText = React.useMemo(() => {
+    if (reportType === 'annual') return `التقرير السنوي (${reportYear})`;
+    if (reportType === 'monthly') return `التقرير الشهري (${reportMonth}/${reportYear})`;
+    if (periodFilter === 'all') return 'كافة السجلات التاريخية';
+    if (periodFilter === 'custom') return `الفترة من ${fromDate || 'البداية'} إلى ${toDate || 'اليوم'}`;
+    return `آخر ${periodFilter} أيام`;
+  }, [reportType, reportYear, reportMonth, periodFilter, fromDate, toDate]);
+
+  // Memoized executive statistics
+  const executiveStats = React.useMemo<ExecutiveReportStats | null>(() => {
+    if (!commoditiesAnalyticsList.length) return null;
+    return computeExecutiveStats(commoditiesAnalyticsList);
+  }, [commoditiesAnalyticsList]);
+
+  // Auto-generated Executive Summary
+  const autoExecutiveSummaryText = React.useMemo<string>(() => {
+    if (!executiveStats || !sectorAnalyticsList.length) return '';
+    return generateAutoExecutiveSummary(executiveStats, sectorAnalyticsList, periodLabelText);
+  }, [executiveStats, sectorAnalyticsList, periodLabelText]);
+
+  // --- Power BI Dashboard Export & Print Handlers ---
+
+  const handleDashboardPDF = async () => {
+    if (!reportData || !executiveStats) {
+      alert('يرجى إنشاء التقرير أولاً');
+      return;
+    }
+
+    try {
+      setExportingDashboard(true);
+      setDashboardExportMessage('جاري تجهيز وتنسيق مستند PDF الاحترافي للوحة التحليل...');
+
+      // 1. Ensure all custom Cairo font weights are fully loaded and rendered
+      if (document.fonts) {
+        await Promise.all([
+          document.fonts.load('bold 24px Cairo'),
+          document.fonts.load('900 24px Cairo'),
+          document.fonts.load('800 24px Cairo'),
+          document.fonts.load('bold 16px Cairo'),
+          document.fonts.load('normal 12px Cairo'),
+          document.fonts.load('bold 11px Cairo'),
+          document.fonts.ready
+        ]).catch(() => {});
+      }
+
+      // 2. Temporarily move print container into positive coordinates to guarantee perfect font metrics & text shaping
+      const container = printContainerRef.current;
+      if (container) {
+        container.style.position = 'fixed';
+        container.style.left = '0px';
+        container.style.top = '0px';
+        container.style.zIndex = '99998';
+        container.style.visibility = 'visible';
+        container.style.opacity = '1';
+        container.style.display = 'block';
+      }
+
+      // Reflow pause to let browser calculate exact ligatures and layout bounds
+      await new Promise(r => setTimeout(r, 120));
+
+      const pdf = new jsPDF('l', 'mm', 'a4'); // 297mm x 210mm Landscape
+
+      if (dashboardExportScope === 'all') {
+        const pages = [
+          { ref: printPage1Ref, title: 'الصفحة 1: الملخص التنفيذي والمؤشرات الرئيسية' },
+          { ref: printPage2Ref, title: 'الصفحة 2: الخريطة الحرارية وأداء القطاعات' },
+          { ref: printPage3Ref, title: 'الصفحة 3: المقارنة المعيارية للأسعار والسلع الأكثر تحركاً' }
+        ];
+
+        for (let i = 0; i < pages.length; i++) {
+          const page = pages[i];
+          if (!page.ref.current) continue;
+
+          setDashboardExportMessage(`جاري معالجة ${page.title}...`);
+
+          const canvas = await html2canvas(page.ref.current, {
+            scale: 2,
+            backgroundColor: '#ffffff',
+            useCORS: true,
+            allowTaint: true,
+            logging: false,
+            x: 0,
+            y: 0,
+            scrollX: 0,
+            scrollY: 0,
+            windowWidth: 1123,
+            windowHeight: 794
+          });
+
+          const imgData = canvas.toDataURL('image/png', 1.0);
+
+          if (i > 0) {
+            pdf.addPage('a4', 'l');
+          }
+
+          // Full page A4 landscape (297mm x 210mm) mapping 1:1 with crisp HTML-rendered typography and logos
+          pdf.addImage(imgData, 'PNG', 0, 0, 297, 210, undefined, 'FAST');
+        }
+
+      } else {
+        // Selective scope export
+        let targetRef: React.RefObject<HTMLDivElement | null> | null = null;
+        let titleScope = '';
+
+        if (dashboardExportScope === 'kpis') {
+          targetRef = printPage1Ref;
+          titleScope = 'الملخص التنفيذي والمؤشرات';
+        } else if (dashboardExportScope === 'heatmap') {
+          targetRef = printPage2Ref;
+          titleScope = 'الخريطة الحرارية وأداء القطاعات';
+        } else if (dashboardExportScope === 'base100' || dashboardExportScope === 'topmovers') {
+          targetRef = printPage3Ref;
+          titleScope = dashboardExportScope === 'base100' ? 'المقارنة المعيارية للأسعار (Base-100)' : 'السلع الأكثر ارتفاعاً وانخفاضاً';
+        }
+
+        if (!targetRef || !targetRef.current) {
+          throw new Error('Target element not found');
+        }
+
+        setDashboardExportMessage(`جاري معالجة ${titleScope}...`);
+        const canvas = await html2canvas(targetRef.current, {
+          scale: 2,
+          backgroundColor: '#ffffff',
+          useCORS: true,
+          allowTaint: true,
+          logging: false,
+          x: 0,
+          y: 0,
+          scrollX: 0,
+          scrollY: 0,
+          windowWidth: 1123,
+          windowHeight: 794
+        });
+
+        const imgData = canvas.toDataURL('image/png', 1.0);
+        pdf.addImage(imgData, 'PNG', 0, 0, 297, 210, undefined, 'FAST');
+      }
+
+      const fileName = `GPP-Economic-Dashboard-${new Date().toISOString().slice(0, 10)}.pdf`;
+      pdf.save(fileName);
+      setDashboardSuccessMessage('تم تحميل ملف PDF الاحترافي للوحة التحليل بنجاح!');
+      setTimeout(() => setDashboardSuccessMessage(''), 3500);
+
+    } catch (err) {
+      console.error('Dashboard PDF export error:', err);
+      alert('حدث خطأ أثناء تصدير ملف PDF للوحة');
+    } finally {
+      const container = printContainerRef.current;
+      if (container) {
+        container.style.position = 'absolute';
+        container.style.left = '-99999px';
+        container.style.top = '0px';
+        container.style.zIndex = '-1000';
+      }
+      setExportingDashboard(false);
+      setDashboardExportMessage('');
+    }
+  };
+
+  const handleDashboardPNG = async () => {
+    if (!reportData) {
+      alert('يرجى إنشاء التقرير أولاً');
+      return;
+    }
+
+    try {
+      setExportingDashboard(true);
+      setDashboardExportMessage('جاري التقاط ومعالجة صورة PNG عالية الدقة...');
+
+      let targetEl: HTMLElement | null = null;
+      let filenamePrefix = 'GPP-Dashboard';
+
+      if (dashboardExportScope === 'all') {
+        targetEl = dashboardRef.current;
+        filenamePrefix = 'GPP-Full-Dashboard';
+      } else if (dashboardExportScope === 'kpis') {
+        targetEl = kpiCardsRef.current;
+        filenamePrefix = 'GPP-KPI-Cards';
+      } else if (dashboardExportScope === 'heatmap') {
+        targetEl = heatmapRef.current;
+        filenamePrefix = 'GPP-Sector-Heatmap';
+      } else if (dashboardExportScope === 'base100') {
+        targetEl = base100Ref.current;
+        filenamePrefix = 'GPP-Base100-Chart';
+      } else if (dashboardExportScope === 'topmovers') {
+        targetEl = topMoversRef.current;
+        filenamePrefix = 'GPP-TopMovers-Chart';
+      }
+
+      if (!targetEl) throw new Error('Target element not found');
+
+      const canvas = await html2canvas(targetEl, {
+        scale: 2,
+        backgroundColor: '#ffffff',
+        useCORS: true,
+        logging: false,
+        windowWidth: targetEl.scrollWidth,
+        windowHeight: targetEl.scrollHeight
+      });
+
+      const imgData = canvas.toDataURL('image/png', 1.0);
+      const link = document.createElement('a');
+      link.href = imgData;
+      link.download = `${filenamePrefix}-${new Date().toISOString().slice(0, 10)}.png`;
+      link.click();
+
+      setDashboardSuccessMessage('تم تحميل صورة PNG بنجاح!');
+      setTimeout(() => setDashboardSuccessMessage(''), 3500);
+
+    } catch (err) {
+      console.error('Dashboard PNG export error:', err);
+      alert('حدث خطأ أثناء تحميل صورة PNG');
+    } finally {
+      setExportingDashboard(false);
+      setDashboardExportMessage('');
+    }
+  };
+
+  const handleDashboardExcel = async () => {
+    if (!reportData || !executiveStats) {
+      alert('يرجى إنشاء التقرير أولاً');
+      return;
+    }
+
+    try {
+      setExportingDashboard(true);
+      setDashboardExportMessage('جاري تجميع وحفظ مصنف Excel بـ 6 أوراق عمل...');
+
+      const wb = XLSX.utils.book_new();
+
+      // Sheet 1: ملخص المؤشرات الاقتصادية
+      const kpiRows = [
+        { "المؤشر الاقتصادي": "نطاق التقرير والفترة", "القيمة": periodLabelText, "الوحدة / الملاحظات": "الفترة المحددة في لوحة التحليل" },
+        { "المؤشر الاقتصادي": "تاريخ البداية", "القيمة": reportStartDate || "غير محدد", "الوحدة / الملاحظات": "تاريخ أول سجل معتمد" },
+        { "المؤشر الاقتصادي": "تاريخ النهاية", "القيمة": reportEndDate || "غير محدد", "الوحدة / الملاحظات": "تاريخ آخر قيد رصد" },
+        { "المؤشر الاقتصادي": "إجمالي السلع المشمولة", "القيمة": executiveStats.totalCommodities, "الوحدة / الملاحظات": "سلعة نشطة" },
+        { "المؤشر الاقتصادي": "القطاعات الاقتصادية النشطة", "القيمة": executiveStats.totalSectors, "الوحدة / الملاحظات": "قطاعات" },
+        { "المؤشر الاقتصادي": "إجمالي السجلات المسترجعة", "القيمة": executiveStats.totalRawRecords, "الوحدة / الملاحظات": "سجل تاريخي مكتمل عبر Pagination" },
+        { "المؤشر الاقتصادي": "عدد أيام التداول والرصد", "القيمة": executiveStats.periodDays, "الوحدة / الملاحظات": "أيام" },
+        { "المؤشر الاقتصادي": "متوسط عائد سلة السلع الإجمالي", "القيمة": `${executiveStats.overallAvgChangePercent > 0 ? '+' : ''}${executiveStats.overallAvgChangePercent.toFixed(2)}%`, "الوحدة / الملاحظات": "متوسط موزون نسبي" },
+        { "المؤشر الاقتصادي": "عدد السلع المرتفعة (+)", "القيمة": executiveStats.upCount, "الوحدة / الملاحظات": "سلعة" },
+        { "المؤشر الاقتصادي": "عدد السلع المنخفضة (-)", "القيمة": executiveStats.downCount, "الوحدة / الملاحظات": "سلعة" },
+        { "المؤشر الاقتصادي": "عدد السلع المستقرة (=)", "القيمة": executiveStats.stableCount, "الوحدة / الملاحظات": "سلعة" },
+        { "المؤشر الاقتصادي": "السلعة الأكثر صعوداً", "القيمة": `${executiveStats.topGainer?.name_ar || '—'} (${executiveStats.topGainer?.symbol || '—'})`, "الوحدة / الملاحظات": `+${executiveStats.topGainer?.changePercent.toFixed(2) || 0}%` },
+        { "المؤشر الاقتصادي": "السلعة الأكثر هبوطاً", "القيمة": `${executiveStats.topLoser?.name_ar || '—'} (${executiveStats.topLoser?.symbol || '—'})`, "الوحدة / الملاحظات": `${executiveStats.topLoser?.changePercent.toFixed(2) || 0}%` },
+        { "المؤشر الاقتصادي": "تنبيهات جودة البيانات وشذوذ الأسعار", "القيمة": executiveStats.totalAnomalies, "الوحدة / الملاحظات": "سجلات تاريخية تبتعد إحصائياً بأكثر من 2.5 انحراف معياري" },
+        { "المؤشر الاقتصادي": "الملخص التنفيذي الاقتصادي", "القيمة": autoExecutiveSummaryText || "—", "الوحدة / الملاحظات": "صياغة تحليلية آلية" }
+      ];
+      const wsKpi = XLSX.utils.json_to_sheet(kpiRows);
+      XLSX.utils.book_append_sheet(wb, wsKpi, "ملخص المؤشرات الاقتصادية");
+
+      // Sheet 2: أداء القطاعات
+      const sectorRows = sectorAnalyticsList.map(s => ({
+        "رمز القطاع": s.sector,
+        "اسم القطاع بالعربية": s.sectorNameAr,
+        "عدد السلع المشمولة": s.commoditiesCount,
+        "متوسط نسبة التغير %": Number(s.avgChangePercent.toFixed(2)),
+        "أفضل سلعة صعوداً": s.topGainer ? `${s.topGainer.name_ar} (${s.topGainer.symbol})` : "—",
+        "نسبة صعود الأفضل %": s.topGainer ? Number(s.topGainer.changePercent.toFixed(2)) : 0,
+        "أدنى سلعة هبوطاً": s.topLoser ? `${s.topLoser.name_ar} (${s.topLoser.symbol})` : "—",
+        "نسبة هبوط الأدنى %": s.topLoser ? Number(s.topLoser.changePercent.toFixed(2)) : 0,
+        "عدد السلع الصاعدة": s.upCount,
+        "عدد السلع الهابطة": s.downCount,
+        "عدد السلع المستقرة": s.stableCount
+      }));
+      const wsSectors = XLSX.utils.json_to_sheet(sectorRows);
+      XLSX.utils.book_append_sheet(wb, wsSectors, "أداء القطاعات");
+
+      // Sheet 3: السلع الأعلى تحركاً (Top Movers)
+      const sortedGainers = [...commoditiesAnalyticsList].filter(c => c.hasData && c.changePercent > 0).sort((a,b) => b.changePercent - a.changePercent);
+      const sortedLosers = [...commoditiesAnalyticsList].filter(c => c.hasData && c.changePercent < 0).sort((a,b) => a.changePercent - b.changePercent);
+      const moversRows = [...sortedGainers, ...sortedLosers].map(c => ({
+        "التصنيف": c.changePercent >= 0 ? "صاعد (+)" : "هابط (-)",
+        "رمز السلعة": c.symbol,
+        "اسم السلعة": c.name_ar,
+        "الاسم بالإنجليزية": c.name_en,
+        "القطاع": c.sector,
+        "سعر البداية": c.startPrice,
+        "السعر الأخير": c.currentPrice,
+        "قيمة التغير": Number(c.changeValue.toFixed(2)),
+        "نسبة التغير %": Number(c.changePercent.toFixed(2)),
+        "وحدة القياس": c.symbol === 'WHEAT_US' ? 'سنت / بوشل' : (c.unit || '—'),
+        "أعلى سعر": c.maxPrice,
+        "أدنى سعر": c.minPrice,
+        "المتوسط الحسابي": Number(c.avgPrice.toFixed(2)),
+        "الانحراف المعياري": Number(c.standardDeviation.toFixed(2)),
+        "نسبة التذبذب %": Number(c.volatilityPercent.toFixed(2)),
+        "اتجاه الحركة": c.trend === 'up' ? 'صعود' : c.trend === 'down' ? 'هبوط' : 'استقرار'
+      }));
+      const wsMovers = XLSX.utils.json_to_sheet(moversRows);
+      XLSX.utils.book_append_sheet(wb, wsMovers, "السلع الأعلى تحركاً");
+
+      // Sheet 4: بيانات المقارنة المعيارية Base-100
+      const allDatesSet = new Set<string>();
+      commoditiesAnalyticsList.forEach(c => {
+        c.normalizedSeries?.forEach(pt => allDatesSet.add(pt.date));
+      });
+      const sortedTimeline = Array.from(allDatesSet).sort();
+
+      const base100Rows = sortedTimeline.map(dateKey => {
+        const row: Record<string, any> = { "التاريخ": dateKey };
+        commoditiesAnalyticsList.forEach(c => {
+          const pt = c.normalizedSeries?.find(p => p.date === dateKey);
+          row[`${c.name_ar} (${c.symbol}) - Base100`] = pt ? Number(pt.normalizedValue.toFixed(2)) : "—";
+          row[`${c.name_ar} (${c.symbol}) - السعر`] = pt ? pt.price : "—";
+        });
+        return row;
+      });
+      const wsBase100 = XLSX.utils.json_to_sheet(base100Rows);
+      XLSX.utils.book_append_sheet(wb, wsBase100, "بيانات Base-100");
+
+      // Sheet 5: الإغلاقات اليومية
+      const dailySummaries = getDailySummaryRecords(reportData.history || []);
+      const dailyRows = dailySummaries.map(h => {
+        const comm = catalog.find(c => c.symbol === h.symbol) || reportData.prices?.find((p: any) => p.symbol === h.symbol);
+        return {
+          "الرمز": h.symbol,
+          "اسم السلعة": comm?.name_ar || h.symbol,
+          "القطاع": comm?.sector || "—",
+          "التاريخ": h.recorded_at ? h.recorded_at.slice(0, 10) : "—",
+          "سعر الإغلاق": h.price,
+          "أعلى سعر": h.high ?? "—",
+          "أدنى سعر": h.low ?? "—",
+          "المصدر": h.source ?? "—",
+          "وحدة القياس": h.symbol === 'WHEAT_US' ? 'سنت / بوشل' : (comm?.unit || '—')
+        };
+      });
+      const wsDaily = XLSX.utils.json_to_sheet(dailyRows);
+      XLSX.utils.book_append_sheet(wb, wsDaily, "الإغلاقات اليومية");
+
+      // Sheet 6: البيانات التاريخية الأصلية
+      if (reportData.history && reportData.history.length > 0) {
+        const rawHistoryRows = reportData.history.map((h: any) => ({
+          "الرمز": h.symbol,
+          "السعر": h.price,
+          "أعلى": h.high ?? "—",
+          "أدنى": h.low ?? "—",
+          "المصدر": h.source ?? "—",
+          "تاريخ ووقت التسجيل": h.recorded_at ? h.recorded_at.slice(0, 19).replace("T", " ") : "—"
+        }));
+        const wsRaw = XLSX.utils.json_to_sheet(rawHistoryRows);
+        XLSX.utils.book_append_sheet(wb, wsRaw, "البيانات التاريخية الأصلية");
+      }
+
+      const fileName = `GPP-Dashboard-Analytics-${new Date().toISOString().slice(0, 10)}.xlsx`;
+      XLSX.writeFile(wb, fileName);
+      setDashboardSuccessMessage('تم تحميل مصنف Excel بـ 6 أوراق عمل بنجاح!');
+      setTimeout(() => setDashboardSuccessMessage(''), 3500);
+
+    } catch (err) {
+      console.error('Dashboard Excel export error:', err);
+      alert('حدث خطأ أثناء تصدير ملف Excel');
+    } finally {
+      setExportingDashboard(false);
+      setDashboardExportMessage('');
+    }
+  };
+
+  const handleDashboardPrint = () => {
+    window.print();
+  };
+
   const getChartData = () => {
     if (!reportData || !reportData.history) return { data: [], lines: [] };
     const raw = reportData.history;
     const map = new Map<string, any>();
     const linesSet = new Set<string>();
 
+    const basePriceMap = new Map<string, number>();
+    if (chartMode === "normalized") {
+      const sortedHistory = [...raw].sort((a, b) => 
+        new Date(a.recorded_at || a.created_at).getTime() - new Date(b.recorded_at || b.created_at).getTime()
+      );
+      sortedHistory.forEach(r => {
+        if (!basePriceMap.has(r.symbol) && r.price > 0) {
+          basePriceMap.set(r.symbol, r.price);
+        }
+      });
+    }
+
     raw.forEach((r: any) => {
       const d = new Date(r.recorded_at);
-      const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+      const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
       if (!map.has(dateStr)) {
         map.set(dateStr, { recorded_at: dateStr });
       }
       const entry = map.get(dateStr);
-      entry[r.symbol] = r.price;
+      if (chartMode === "normalized") {
+        const base = basePriceMap.get(r.symbol) || r.price;
+        entry[r.symbol] = base > 0 ? Number(((r.price / base) * 100).toFixed(2)) : 100;
+      } else {
+        entry[r.symbol] = r.price;
+      }
       linesSet.add(r.symbol);
     });
 
     const data = Array.from(map.values()).sort((a, b) => a.recorded_at.localeCompare(b.recorded_at));
     let lines = Array.from(linesSet);
     if (lines.length > 20) {
-      lines = lines.slice(0, 10); // Limit to 10 lines if there are too many (e.g. general report)
+      lines = lines.slice(0, 10);
     }
     return { data, lines };
   };
@@ -890,6 +1382,51 @@ const Reports: React.FC = () => {
     min-height: 794px;
   }
   @media print {
+    body { 
+      background: white !important; 
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+    .no-print, nav, aside, [class*="sidebar"], header, .report-filter-form, .dashboard-toolbar-container {
+      display: none !important;
+    }
+    .bi-dashboard-screen-only {
+      display: none !important;
+    }
+    .dashboard-print-container {
+      position: static !important;
+      left: auto !important;
+      top: auto !important;
+      width: 100% !important;
+      display: block !important;
+      visibility: visible !important;
+      pointer-events: auto !important;
+      z-index: 10 !important;
+    }
+    .dashboard-a4-page {
+      page-break-after: always !important;
+      break-after: page !important;
+      width: 100% !important;
+      max-width: 100% !important;
+      height: auto !important;
+      min-height: 200mm !important;
+      margin: 0 auto !important;
+      box-shadow: none !important;
+      border: none !important;
+      overflow: hidden !important;
+    }
+    .dashboard-a4-page:last-child {
+      page-break-after: avoid !important;
+      break-after: avoid !important;
+    }
+    .print-only {
+      display: block !important;
+    }
+    .dashboard-print-block {
+      break-inside: avoid !important;
+      page-break-inside: avoid !important;
+      margin-bottom: 24px !important;
+    }
     .report-page {
       page-break-after: always;
       break-after: page;
@@ -897,6 +1434,13 @@ const Reports: React.FC = () => {
       box-shadow: none;
     }
     @page {
+      size: A4 landscape;
+      margin: 8mm;
+    }
+    .report-page[data-orientation="portrait"] {
+      page: portrait-page;
+    }
+    @page portrait-page {
       size: A4 portrait;
     }
     .report-page[data-orientation="landscape"] {
@@ -905,7 +1449,6 @@ const Reports: React.FC = () => {
     @page landscape-page {
       size: A4 landscape;
     }
-    body { background: white; }
   }
 
   .report-table {
@@ -956,7 +1499,7 @@ const Reports: React.FC = () => {
   }
 `}</style>
 
-      <div className="flex justify-between items-center bg-white dark:bg-dark-card p-6 rounded-xl shadow-sm border border-slate-100 dark:border-slate-800">
+      <div className="no-print flex justify-between items-center bg-white dark:bg-dark-card p-6 rounded-xl shadow-sm border border-slate-100 dark:border-slate-800">
         <div>
           <h2 className="text-2xl font-bold text-slate-800 dark:text-white flex items-center gap-3">
             <FileText className="text-primary-600" /> منشئ التقارير
@@ -965,7 +1508,7 @@ const Reports: React.FC = () => {
         </div>
       </div>
       
-      <div className="bg-white dark:bg-dark-card p-6 rounded-xl shadow-sm border border-slate-100 dark:border-slate-800">
+      <div className="no-print bg-white dark:bg-dark-card p-6 rounded-xl shadow-sm border border-slate-100 dark:border-slate-800 report-filter-form">
 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           <div>
             <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">نوع التقرير</label>
@@ -1233,6 +1776,14 @@ const Reports: React.FC = () => {
               {exporting ? 'جاري تجهيز الملف...' : <><ImageIcon size={18} /> تحميل صورة PNG</>}
             </button>
             <button 
+              onClick={downloadReportExcel}
+              disabled={exporting || !reportData || loading}
+              className="flex items-center gap-2 bg-emerald-700 text-white px-5 py-2.5 rounded-lg hover:bg-emerald-800 transition font-medium shadow-sm"
+              title="تصدير بيانات ومؤشرات التقرير إلى مصنف Excel منسق"
+            >
+              <FileSpreadsheet size={18} /> تصدير Excel
+            </button>
+            <button 
               onClick={handleReset}
               className="flex items-center gap-2 bg-slate-200 text-slate-700 px-5 py-2.5 rounded-lg hover:bg-slate-300 transition font-medium dark:bg-slate-700 dark:text-slate-200 dark:hover:bg-slate-600"
             >
@@ -1244,8 +1795,254 @@ const Reports: React.FC = () => {
       </div>
 
     {isGenerated && reportData && (
-      <div className="bg-slate-200 dark:bg-slate-800 p-8 rounded-xl overflow-x-auto shadow-inner flex flex-col items-center gap-6">
-        <div ref={reportRef} className="flex flex-col gap-6" style={{ fontFamily: 'Tajawal, sans-serif' }}>
+      <div className="bg-slate-100 dark:bg-slate-900 p-4 sm:p-6 lg:p-8 rounded-2xl shadow-inner flex flex-col items-center gap-6 w-full">
+        {/* Main View Mode Switcher */}
+        <div className="no-print w-full max-w-7xl flex flex-wrap items-center justify-between gap-4 bg-white dark:bg-dark-card p-4 rounded-xl shadow-sm border border-slate-200 dark:border-dark-border">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setActiveMainView('bi_dashboard')}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-lg font-bold text-sm transition-all ${
+                activeMainView === 'bi_dashboard'
+                  ? 'bg-primary-600 text-white shadow-md'
+                  : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+              }`}
+            >
+              <LayoutDashboard size={18} />
+              <span>لوحة التحليل الاقتصادي (Power BI Dashboard)</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveMainView('detailed_document')}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-lg font-bold text-sm transition-all ${
+                activeMainView === 'detailed_document'
+                  ? 'bg-primary-600 text-white shadow-md'
+                  : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+              }`}
+            >
+              <FileText size={18} />
+              <span>وثيقة التقرير والطباعة (Detailed Document)</span>
+            </button>
+          </div>
+
+          <div className="flex items-center gap-3 text-xs text-slate-600 dark:text-slate-400">
+            <span className="flex items-center gap-1.5 font-medium">
+              <Activity size={15} className="text-primary-600 dark:text-primary-400" />
+              تم استرجاع <strong className="text-primary-700 dark:text-primary-300 font-bold">{totalHistoryRows.toLocaleString('ar-LY')}</strong> سجلاً كاملاً
+            </span>
+            <span className="text-slate-300 dark:text-slate-700">|</span>
+            <span className="font-semibold text-slate-700 dark:text-slate-300">
+              {periodLabelText}
+            </span>
+          </div>
+        </div>
+
+        {/* BI Dashboard View */}
+        {activeMainView === 'bi_dashboard' && (
+          <div className="w-full max-w-7xl space-y-4">
+            {/* Direct Export & Print Toolbar for Power BI Dashboard */}
+            <DashboardExportToolbar
+              exportScope={dashboardExportScope}
+              onScopeChange={setDashboardExportScope}
+              onExportPDF={handleDashboardPDF}
+              onExportExcel={handleDashboardExcel}
+              onExportPNG={handleDashboardPNG}
+              onPrint={handleDashboardPrint}
+              isExporting={exportingDashboard}
+              statusMessage={dashboardExportMessage}
+              successMessage={dashboardSuccessMessage}
+            />
+
+            {/* Dedicated Print & PDF 3-Page Executive Template (A4 Landscape) */}
+            {executiveStats && (
+              <div 
+                ref={printContainerRef}
+                className="dashboard-print-container"
+                style={{
+                  position: 'absolute',
+                  left: '-99999px',
+                  top: 0,
+                  width: '1123px',
+                  overflow: 'visible',
+                  pointerEvents: 'none',
+                  zIndex: -1000
+                }}
+              >
+                <DashboardPrintTemplate
+                  stats={executiveStats}
+                  sectorAnalytics={sectorAnalyticsList}
+                  commoditiesAnalytics={commoditiesAnalyticsList}
+                  periodLabel={periodLabelText}
+                  startDate={reportStartDate}
+                  endDate={reportEndDate}
+                  executiveSummaryText={autoExecutiveSummaryText}
+                  page1Ref={printPage1Ref}
+                  page2Ref={printPage2Ref}
+                  page3Ref={printPage3Ref}
+                />
+              </div>
+            )}
+
+            {/* Dashboard Printable & Capturable Container */}
+            <div 
+              ref={dashboardRef} 
+              id="gpp-bi-dashboard" 
+              className="bi-dashboard-screen-only w-full space-y-6 bg-white dark:bg-dark-card p-4 sm:p-6 rounded-2xl border border-slate-200 dark:border-dark-border shadow-sm text-slate-900 dark:text-white"
+            >
+              {/* Official Printable Header (Visible in print and PDF captures) */}
+              <div className="print-only hidden p-4 mb-3 border-b-2 border-[#1e3a8a] bg-white text-slate-900 rounded-xl">
+                <div className="flex items-center justify-between">
+                  <img 
+                    src="https://i.postimg.cc/bwVPbtwT/cropped-NEW-LOGO-LTN-06-1-removebg-preview.png" 
+                    alt="LTN Logo" 
+                    className="h-12 w-auto object-contain"
+                  />
+                  <div className="text-center">
+                    <h2 className="text-xl font-extrabold text-[#1e3a8a]">
+                      منصة الأسعار العالمية (GPP) — لوحة التحليل الاقتصادي التنفيذية
+                    </h2>
+                    <p className="text-xs text-slate-600 mt-1 font-semibold">
+                      {periodLabelText} • شبكة ليبيا للتجارة • تاريخ التصدير: {new Date().toLocaleDateString('ar-LY')}
+                    </p>
+                  </div>
+                  <img 
+                    src="https://i.postimg.cc/fyZwc16S/tsmym-bdwn-%CA%BFnwan-(1).png" 
+                    alt="GPP Logo" 
+                    className="h-12 w-auto object-contain"
+                  />
+                </div>
+              </div>
+
+              {/* Section 1: 10 Executive KPI Cards & Auto Executive Memo */}
+              <div ref={kpiCardsRef} className="dashboard-print-block space-y-4">
+                {executiveStats && (
+                  <EconomicKpiCards
+                    stats={executiveStats}
+                    selectedPeriodLabel={periodLabelText}
+                    allCommoditiesAnalysis={commoditiesAnalyticsList}
+                    onSelectCommodity={(sym) => {
+                      setSymbolFilter(sym);
+                      setReportType('commodity');
+                    }}
+                  />
+                )}
+
+                {autoExecutiveSummaryText && (
+                  <div className="bg-gradient-to-l from-primary-900 to-indigo-900 text-white p-5 rounded-xl shadow-md border border-primary-800">
+                    <div className="flex items-start gap-3">
+                      <div className="w-9 h-9 rounded-lg bg-white/10 flex items-center justify-center shrink-0 mt-0.5">
+                        <Sparkles size={20} className="text-amber-300" />
+                      </div>
+                      <div className="space-y-1.5 flex-1">
+                        <div className="flex items-center gap-2">
+                          <h4 className="font-bold text-sm text-white">
+                            الملخص التنفيذي الاقتصادي الآلي
+                          </h4>
+                          <span className="text-[10px] bg-primary-700/60 text-primary-200 px-2 py-0.5 rounded-full font-mono">
+                            Auto Executive Memo
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-200 leading-relaxed font-normal">
+                          {autoExecutiveSummaryText}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Section 2: Sector Heatmap */}
+              {sectorAnalyticsList.length > 0 && (
+                <div ref={heatmapRef} className="dashboard-print-block">
+                  <SectorHeatmap
+                    sectors={sectorAnalyticsList}
+                    selectedSector={sectorFilter}
+                    onSelectSector={(secCode) => {
+                      setSectorFilter(secCode);
+                      if (secCode) {
+                        setReportType('sector');
+                      } else {
+                        setReportType('general');
+                      }
+                    }}
+                  />
+                </div>
+              )}
+
+              {/* Section 3: Base-100 Relative Comparison Chart */}
+              <div ref={base100Ref} className="dashboard-print-block">
+                <Base100ComparisonChart
+                  commoditiesAnalysis={commoditiesAnalyticsList}
+                />
+              </div>
+
+              {/* Section 4: Top Movers Bar Chart */}
+              <div ref={topMoversRef} className="dashboard-print-block">
+                <TopMoversChart
+                  commoditiesAnalysis={commoditiesAnalyticsList}
+                  onSelectCommodity={(sym) => {
+                    setSymbolFilter(sym);
+                    setReportType('commodity');
+                  }}
+                />
+              </div>
+
+              {/* Official Print Footer */}
+              <div className="print-only hidden pt-3 border-t border-slate-300 text-xs text-slate-500 text-center font-medium">
+                منصة الأسعار العالمية (GPP) — شبكة ليبيا للتجارة (LTN) — جميع الحقوق محفوظة © {new Date().getFullYear()}
+              </div>
+
+              {/* Footer Navigation Link to Document View */}
+              <div className="no-print bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700/70 rounded-xl p-4 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-sm">
+                <div className="text-xs text-slate-600 dark:text-slate-400">
+                  هل ترغب في تصدير نسخة ورقية مفصلة أو معاينة الجداول التفصيلية بكل سلعة؟
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveMainView('detailed_document')}
+                  className="inline-flex items-center gap-2 bg-primary-50 dark:bg-primary-950 text-primary-700 dark:text-primary-300 hover:bg-primary-100 px-4 py-2 rounded-lg text-xs font-bold transition border border-primary-200 dark:border-primary-800"
+                >
+                  <span>الانتقال إلى وثيقة التقرير والطباعة</span>
+                  <FileText size={15} />
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Detailed Document View (Printed Pages & Cover) */}
+        {totalHistoryRows > 0 && activeMainView === 'detailed_document' && (
+          <div className="w-full max-w-[210mm] flex flex-wrap items-center justify-between gap-3 bg-white dark:bg-dark-card text-slate-800 dark:text-slate-200 px-5 py-3 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 text-sm font-medium">
+            <span className="flex items-center gap-2 text-slate-700 dark:text-slate-300">
+              <Activity size={18} className="text-primary-600 dark:text-primary-400" />
+              تم استرجاع <strong className="text-primary-700 dark:text-primary-300 font-bold">{totalHistoryRows.toLocaleString("ar-LY")}</strong> سجل تاريخي مكتمل عبر Pagination
+            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-500 dark:text-slate-400">مقياس الرسم البياني:</span>
+              <button
+                type="button"
+                onClick={() => setChartMode("absolute")}
+                className={`px-3 py-1 rounded-md text-xs font-semibold transition ${chartMode === "absolute" ? "bg-primary-600 text-white shadow" : "bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200"}`}
+              >
+                الأسعار المطلقة ($)
+              </button>
+              <button
+                type="button"
+                onClick={() => setChartMode("normalized")}
+                className={`px-3 py-1 rounded-md text-xs font-semibold transition ${chartMode === "normalized" ? "bg-primary-600 text-white shadow" : "bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200"}`}
+                title="مقارنة حركة السلع على أساس موحد (Base 100 Index)"
+              >
+                المؤشر المعياري (Base 100)
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div 
+          ref={reportRef} 
+          className={`flex flex-col gap-6 ${activeMainView === 'detailed_document' ? 'block' : 'hidden'}`} 
+          style={{ fontFamily: 'Tajawal, sans-serif' }}
+        >
           
           {/* Cover Page */}
           <div className="report-page shrink-0" data-orientation="portrait">

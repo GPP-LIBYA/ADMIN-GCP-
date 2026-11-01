@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;500;600;700;800;900&family=Tajawal:wght@400;500;700;800;900&display=swap');
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -6,10 +6,17 @@
 @layer base {
   body {
     @apply antialiased m-0 p-0 text-slate-800 bg-slate-50 dark:bg-dark-bg dark:text-slate-200;
-    font-family: 'Tajawal', sans-serif;
+    font-family: 'Cairo', 'Tajawal', sans-serif;
   }
   input, button, select, textarea, table {
-    font-family: 'Tajawal', sans-serif;
+    font-family: 'Cairo', 'Tajawal', sans-serif;
+  }
+  .arabic-pdf-text {
+    font-family: 'Cairo', sans-serif !important;
+    letter-spacing: 0px !important;
+    font-feature-settings: "liga" 1, "kern" 1 !important;
+    -webkit-font-feature-settings: "liga" 1, "kern" 1 !important;
+    text-rendering: optimizeLegibility !important;
   }
   th {
     font-size: 14px;

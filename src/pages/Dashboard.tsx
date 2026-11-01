@@ -2,11 +2,11 @@ import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { 
   BarChart3, 
-  Tag, 
+  TrendingUp, 
   Newspaper, 
-  MessageSquare, 
+  Mail, 
   Eye, 
-  Activity,
+  Users,
   Clock
 } from 'lucide-react';
 import { formatAdminDateTime } from '../utils/dateUtils';
@@ -86,20 +86,27 @@ export default function Dashboard() {
   }
 
   const statCards = [
-    { title: 'السلع النشطة', value: stats?.activeCommodities, icon: Tag, color: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-100 dark:bg-blue-900/30' },
+    { title: 'السلع النشطة', value: stats?.activeCommodities, icon: TrendingUp, color: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-100 dark:bg-blue-900/30' },
     { title: 'زيارات اليوم', value: stats?.todayVisits, icon: Eye, color: 'text-green-600 dark:text-green-400', bg: 'bg-green-100 dark:bg-green-900/30' },
-    { title: 'إجمالي الزيارات', value: stats?.totalVisits, icon: Activity, color: 'text-purple-600 dark:text-purple-400', bg: 'bg-purple-100 dark:bg-purple-900/30' },
+    { title: 'إجمالي الزيارات', value: stats?.totalVisits, icon: Users, color: 'text-purple-600 dark:text-purple-400', bg: 'bg-purple-100 dark:bg-purple-900/30' },
     { title: 'الأخبار', value: stats?.newsCount, icon: Newspaper, color: 'text-orange-600 dark:text-orange-400', bg: 'bg-orange-100 dark:bg-orange-900/30' },
     { title: 'التحليلات', value: stats?.analysisCount, icon: BarChart3, color: 'text-indigo-600 dark:text-indigo-400', bg: 'bg-indigo-100 dark:bg-indigo-900/30' },
-    { title: 'الرسائل', value: stats?.messagesCount, icon: MessageSquare, color: 'text-rose-600 dark:text-rose-400', bg: 'bg-rose-100 dark:bg-rose-900/30' },
+    { title: 'الرسائل', value: stats?.messagesCount, icon: Mail, color: 'text-rose-600 dark:text-rose-400', bg: 'bg-rose-100 dark:bg-rose-900/30' },
   ];
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">
-        <h1 className="text-2xl font-bold text-slate-900 dark:text-white">نظرة عامة</h1>
+        <div className="flex items-center gap-3">
+          <img 
+            src="https://i.postimg.cc/fyZwc16S/tsmym-bdwn-%CA%BFnwan-(1).png" 
+            alt="شعار GPP" 
+            className="h-10 w-auto object-contain drop-shadow-sm"
+          />
+          <h1 className="text-2xl font-bold text-slate-900 dark:text-white">نظرة عامة</h1>
+        </div>
         {stats?.lastPriceUpdate && (
-          <div className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400 bg-white dark:bg-dark-card px-3 py-1.5 rounded-full border dark:border-dark-border dark:border-dark-border shadow-sm">
+          <div className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400 bg-white dark:bg-dark-card px-3 py-1.5 rounded-full border dark:border-dark-border shadow-sm">
             <Clock size={16} />
             <span>آخر تحديث للأسعار: {formatAdminDateTime(stats.lastPriceUpdate)}</span>
           </div>
@@ -108,7 +115,7 @@ export default function Dashboard() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {statCards.map((stat, idx) => (
-          <div key={idx} className="bg-white dark:bg-dark-card rounded-xl shadow-sm border dark:border-dark-border dark:border-dark-border p-6 flex items-center gap-4 transition-colors">
+          <div key={idx} className="bg-white dark:bg-dark-card rounded-xl shadow-sm border dark:border-dark-border p-6 flex items-center gap-4 transition-colors">
             <div className={`p-4 rounded-lg ${stat.bg} ${stat.color}`}>
               <stat.icon size={24} />
             </div>

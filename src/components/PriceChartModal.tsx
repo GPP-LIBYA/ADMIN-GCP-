@@ -33,26 +33,31 @@ export default function PriceChartModal({ isOpen, onClose, commodity }: PriceCha
       let query = supabase
         .from('commodity_price_history')
         .select('symbol, price, recorded_at, created_at')
-        .eq('symbol', commodity.symbol)
-        .order('recorded_at', { ascending: true })
-        .limit(100);
+        .eq('symbol', commodity.symbol);
+
+      if (timeFilter !== 'all') {
+        const days = parseInt(timeFilter);
+        const cutoff = new Date();
+        cutoff.setDate(cutoff.getDate() - days);
+        cutoff.setHours(0, 0, 0, 0);
+        query = query.gte('recorded_at', cutoff.toISOString());
+      }
+
+      query = query
+        .order('recorded_at', { ascending: false })
+        .limit(1000);
 
       const { data: result, error } = await query;
       if (error) throw error;
       
-      let processedData = (result || []).map(row => ({
+      const processedData = (result || []).map(row => ({
         ...row,
         date: new Date(row.recorded_at || row.created_at),
         dateStr: formatAdminDate(row.recorded_at || row.created_at)
       }));
 
-      // Filter locally based on timeFilter
-      if (timeFilter !== 'all') {
-        const days = parseInt(timeFilter);
-        const cutoff = new Date();
-        cutoff.setDate(cutoff.getDate() - days);
-        processedData = processedData.filter(d => d.date >= cutoff);
-      }
+      // Sort chronologically (oldest to newest) for chart timeline display from left to right
+      processedData.sort((a, b) => a.date.getTime() - b.date.getTime());
       
       setData(processedData);
     } catch (err) {
